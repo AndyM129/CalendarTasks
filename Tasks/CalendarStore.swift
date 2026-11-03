@@ -6,6 +6,7 @@ import SwiftUI
 @Observable
 final class CalendarStore {
     private static let selectedIDsKey = "selectedCalendarIDs"
+    private static let groupsKey = "calendarGroups"
 
     let eventStore = EKEventStore()
 
@@ -26,9 +27,23 @@ final class CalendarStore {
         }
     }
 
+    var groups: [CalendarGroup] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(groups) {
+                UserDefaults.standard.set(data, forKey: Self.groupsKey)
+            }
+        }
+    }
+
+    private static func loadGroups() -> [CalendarGroup] {
+        guard let data = UserDefaults.standard.data(forKey: groupsKey) else { return [] }
+        return (try? JSONDecoder().decode([CalendarGroup].self, from: data)) ?? []
+    }
+
     @ObservationIgnored private var changeObserver: NSObjectProtocol?
 
     init() {
+        groups = Self.loadGroups()
         changeObserver = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged, object: eventStore, queue: .main
         ) { [weak self] _ in
@@ -74,6 +89,40 @@ final class CalendarStore {
 
     func selectAll() {
         selectedCalendarIDs = Set(calendars.map(\.calendarIdentifier))
+    }
+
+    // MARK: - 日历组合
+
+    func saveGroup(_ group: CalendarGroup) {
+        if let index = groups.firstIndex(where: { $0.id == group.id }) {
+            groups[index] = group
+        } else {
+            groups.append(group)
+        }
+    }
+
+    func deleteGroup(_ group: CalendarGroup) {
+        groups.removeAll { $0.id == group.id }
+    }
+
+    /// 组合中仍存在的日历
+    func validIDs(of group: CalendarGroup) -> Set<String> {
+        group.calendarIDs.intersection(calendars.map(\.calendarIdentifier))
+    }
+
+    func apply(_ group: CalendarGroup) {
+        selectedCalendarIDs = validIDs(of: group)
+    }
+
+    /// 勾选恰好等于该组合时视为选中
+    func isActive(_ group: CalendarGroup) -> Bool {
+        let ids = validIDs(of: group)
+        return !ids.isEmpty && ids == selectedCalendarIDs
+    }
+
+    func count(for group: CalendarGroup) -> Int {
+        let ids = validIDs(of: group)
+        return dayEventsAllCalendars.count { ids.contains($0.calendar.calendarIdentifier) }
     }
 
     // MARK: - 日期

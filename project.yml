@@ -34,5 +34,7 @@ targets:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         SWIFT_APPROACHABLE_CONCURRENCY: YES
         ENABLE_HARDENED_RUNTIME: YES
-        CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "-"
+        # 固定证书签名：重新编译后日历授权（TCC）不失效
+        DEVELOPMENT_TEAM: 9X349G8KD4
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development: andy_m129@163.com (VRLXD5P3P7)"

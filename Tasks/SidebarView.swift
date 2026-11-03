@@ -3,6 +3,9 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(CalendarStore.self) private var store
+    /// 正在编辑的组合；新建时为空名的新组合
+    @State private var editingGroup: CalendarGroup?
+    @State private var deletingGroup: CalendarGroup?
 
     var body: some View {
         List {
@@ -11,6 +14,26 @@ struct SidebarView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                     .padding(.bottom, 8)
+            }
+            Section {
+                ForEach(store.groups) { group in
+                    GroupRow(group: group)
+                        .contextMenu {
+                            Button("编辑…") { editingGroup = group }
+                            Button("删除…", role: .destructive) { deletingGroup = group }
+                        }
+                }
+            } header: {
+                HStack {
+                    Text("日历组合")
+                    Spacer()
+                    Button("新建日历组合", systemImage: "plus") {
+                        editingGroup = CalendarGroup(name: "", tint: .blue,
+                                                     calendarIDs: store.selectedCalendarIDs)
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                }
             }
             ForEach(store.calendarGroups, id: \.source) { group in
                 Section(group.source) {
@@ -21,6 +44,53 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .sheet(item: $editingGroup) { group in
+            CalendarGroupEditor(group: group)
+        }
+        .confirmationDialog("删除日历组合「\(deletingGroup?.name ?? "")」？",
+                            isPresented: Binding(get: { deletingGroup != nil },
+                                                 set: { if !$0 { deletingGroup = nil } }),
+                            presenting: deletingGroup) { group in
+            Button("删除", role: .destructive) { store.deleteGroup(group) }
+        } message: { _ in
+            Text("只删除组合，不影响其中的日历和日程。")
+        }
+    }
+}
+
+/// 日历组合行：勾选恰好等于组合时高亮
+private struct GroupRow: View {
+    @Environment(CalendarStore.self) private var store
+    let group: CalendarGroup
+
+    var body: some View {
+        let active = store.isActive(group)
+        Button {
+            store.apply(group)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.stack.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(group.tint.color.gradient, in: Circle())
+                Text(group.name)
+                    .lineLimit(1)
+                    .foregroundStyle(active ? Color.accentColor : .primary)
+                Spacer()
+                Text(store.count(for: group), format: .number)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(active ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+                .padding(.horizontal, 8)
+        )
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
