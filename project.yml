@@ -1,0 +1,38 @@
+name: Tasks
+options:
+  bundleIdPrefix: io.github.andym129
+  deploymentTarget:
+    macOS: "26.0"
+  developmentLanguage: zh-Hans
+  createIntermediateGroups: true
+targets:
+  Tasks:
+    type: application
+    platform: macOS
+    sources:
+      - path: Tasks
+    info:
+      path: Tasks/Info.plist
+      properties:
+        CFBundleDisplayName: 日历任务
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        NSCalendarsFullAccessUsageDescription: 日历任务需要读取和编辑你的日历日程。
+    entitlements:
+      path: Tasks/Tasks.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.personal-information.calendars: true
+    settings:
+      base:
+        PRODUCT_NAME: Tasks
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.andym129.calendar-tasks
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        SWIFT_VERSION: 6.0
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
