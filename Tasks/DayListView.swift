@@ -297,14 +297,29 @@ private struct DayHeader: View {
                         .padding()
                 }
                 Spacer(minLength: 8)
-                Text(store.events.count, format: .number)
+                // 显示的条数：未隐藏的日程
+                Text(store.allDayEvents.count + store.timedEvents.count, format: .number)
                     .font((compact ? Font.title2 : .largeTitle).monospacedDigit())
                     .foregroundStyle(Color.accentColor)
                     .contentTransition(.numericText())
             }
-            Text(subtitle)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            // 仿提醒事项的「54 项完成 · 清除」：已隐藏 N 项 · 显示 / 隐藏
+            HStack(spacing: 6) {
+                Text(subtitle)
+                let hidden = store.hiddenEventCount
+                if hidden > 0 {
+                    Text("·")
+                    Text("已隐藏 \(hidden) 项")
+                    Button(store.showHiddenEvents ? "隐藏" : "显示") {
+                        withAnimation(.ui) { store.showHiddenEvents.toggle() }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .help("显示或隐藏状态为「已结束」的日程（在设置里配置哪些状态算已结束）")
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
         }
         .textCase(nil)
         .padding(.vertical, 8)
@@ -433,13 +448,19 @@ struct EventRow: View {
         if event.hasRecurrenceRules {
             pendingTitle = marked.title
         } else {
-            store.updateTitle(of: event, to: marked.title, span: .thisEvent)
+            store.updateTitle(of: event, to: marked.title, span: .thisEvent, completesAllDay: completes(status))
         }
+    }
+
+    /// 全天日程标为 ✅ 即视为已完成：改为非全天、起止设为当前时间
+    private func completes(_ status: String?) -> Bool {
+        event.isAllDay && status.map(EmojiMarkers.normalized) == EmojiMarkers.normalized("✅")
     }
 
     private func commit(span: EKSpan) {
         guard let pendingTitle else { return }
-        store.updateTitle(of: event, to: pendingTitle, span: span)
+        let status = MarkedTitle(pendingTitle, statuses: statuses, priorities: priorities).status
+        store.updateTitle(of: event, to: pendingTitle, span: span, completesAllDay: completes(status))
         self.pendingTitle = nil
     }
 

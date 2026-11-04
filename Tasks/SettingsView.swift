@@ -5,14 +5,16 @@ struct SettingsView: View {
     @AppStorage(EmojiMarkers.statusKey) private var statusText = EmojiMarkers.defaultStatuses
     @AppStorage(EmojiMarkers.priorityKey) private var priorityText = EmojiMarkers.defaultPriorities
     @AppStorage(Animation.durationKey) private var animationDuration = Animation.defaultDuration
+    @AppStorage(CalendarStore.hiddenStatusKey) private var hiddenText = CalendarStore.defaultHiddenStatuses
 
     var body: some View {
         Form {
             Section {
                 MarkerField(title: "状态", text: $statusText, fallback: EmojiMarkers.defaultStatuses)
                 MarkerField(title: "优先级", text: $priorityText, fallback: EmojiMarkers.defaultPriorities)
+                MarkerField(title: "隐藏的状态", text: $hiddenText, fallback: CalendarStore.defaultHiddenStatuses)
             } footer: {
-                Text("识别日程标题开头的 emoji：先状态、后优先级，如「✅‼️写周报」。点击状态弹出可选项，点选后切换；无状态时显示 \(EmojiMarkers.placeholder)。")
+                Text("识别日程标题开头的 emoji：先状态、后优先级，如「✅‼️写周报」。点击状态弹出可选项，点选后切换；无状态时显示 \(EmojiMarkers.placeholder)。「隐藏的状态」表示日程已结束，列表默认不显示，可在日期标题下方点「显示」临时查看。")
                     .foregroundStyle(.secondary)
             }
             Section {
@@ -34,6 +36,7 @@ struct SettingsView: View {
                 Button("恢复默认") {
                     statusText = EmojiMarkers.defaultStatuses
                     priorityText = EmojiMarkers.defaultPriorities
+                    hiddenText = CalendarStore.defaultHiddenStatuses
                     animationDuration = Animation.defaultDuration
                 }
             }

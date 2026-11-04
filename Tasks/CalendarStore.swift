@@ -51,6 +51,10 @@ final class CalendarStore {
 
     init() {
         groups = Self.loadGroups()
+        #if DEBUG
+        // 验证用：启动参数 -debugShowHidden YES 启动时就显示已隐藏的日程
+        showHiddenEvents = UserDefaults.standard.bool(forKey: "debugShowHidden")
+        #endif
         changeObserver = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged, object: eventStore, queue: .main
         ) { [weak self] _ in
@@ -152,14 +156,17 @@ final class CalendarStore {
     }
 
     var allDayEvents: [EKEvent] {
-        events.filter(\.isAllDay)
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        events.filter { $0.isAllDay && isVisible($0) }.sorted(by: listOrder)
     }
 
     var timedEvents: [EKEvent] {
-        events.filter { !$0.isAllDay }
-            .sorted { ($0.startDate, $0.title) < ($1.startDate, $1.title) }
+        events.filter { !$0.isAllDay && isVisible($0) }.sorted(by: listOrder)
     }
+
+    /// 列表里「显示 / 隐藏已结束日程」的开关，不持久化，每次启动默认隐藏
+    var showHiddenEvents = false
+    /// 刚改成隐藏状态、还在 3 秒宽限期内的日程（calendarItemIdentifier）
+    var pendingHideIDs: Set<String> = []
 
     func count(for calendar: EKCalendar) -> Int {
         dayEventsAllCalendars.count { $0.calendar.calendarIdentifier == calendar.calendarIdentifier }
@@ -170,9 +177,27 @@ final class CalendarStore {
     /// 最近一次写入失败的说明，界面弹窗展示后清空
     var lastError: String?
 
-    func updateTitle(of event: EKEvent, to title: String, span: EKSpan) {
+    /// 改标题（状态 / 优先级 emoji）。completesAllDay 为 true 时，全天日程同时改为非全天、起止都设为当前分钟。
+    /// 改成「隐藏的状态」时先留在列表里 3 秒，再带过渡隐藏
+    func updateTitle(of event: EKEvent, to title: String, span: EKSpan, completesAllDay: Bool = false) {
         event.title = title
-        save(event, span: span)
+        if completesAllDay, event.isAllDay {
+            let now = Calendar.current.dateInterval(of: .minute, for: .now)?.start ?? .now
+            event.isAllDay = false
+            event.startDate = now
+            event.endDate = now
+        }
+        let id = event.calendarItemIdentifier
+        let willHide = isHiddenStatus(of: event)
+        if willHide { pendingHideIDs.insert(id) }
+        guard save(event, span: span), willHide else {
+            pendingHideIDs.remove(id)
+            return
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation(.ui) { _ = pendingHideIDs.remove(id) }
+        }
     }
 
     /// 保存改动；失败时撤回未保存的修改并记录原因

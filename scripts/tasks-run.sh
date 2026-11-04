@@ -30,9 +30,13 @@ done
 
 xcodegen generate --quiet
 log=build/last-build.log
-mkdir -p build
+mkdir -p build/tmp
+# 临时目录放在工程内：环境里的 TMPDIR 可能指向不存在或沙箱外的目录，swiftc 会因此失败
+export TMPDIR="$PWD/build/tmp"
 if ! xcodebuild -project Tasks.xcodeproj -scheme Tasks -configuration Debug \
-    -derivedDataPath build/DerivedData build >"$log" 2>&1; then
+    -derivedDataPath build/DerivedData \
+    OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox' build >"$log" 2>&1; then
+    # -disable-sandbox：在 Agent 的沙箱里编译时，宏插件不能再套一层 sandbox-exec，否则 @Observable 等宏展开失败
     grep -E "error:" "$log" >&2 || tail -20 "$log" >&2
     echo "BUILD FAILED（完整日志：$log）" >&2
     exit 1
