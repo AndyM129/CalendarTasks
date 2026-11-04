@@ -147,7 +147,8 @@ struct ContentView: View {
     /// 切换日期的快捷键 ⌘← / ⌘→ / ⌘T，以及 ⌘J 打开日期选择。正在编辑文字或在弹窗里时放行，
     /// 留给文本框做移到行首/行尾、选中等操作，避免误切日期
     private func handleDateShortcut(_ event: NSEvent) -> NSEvent? {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+        // 只比较 ⌘⇧⌥⌃：方向键自带 .function、.numericPad 标志，整体比较会让 ⌘← / ⌘→ 永远匹配不上
+        guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
               let window = event.window, window.sheetParent == nil,
               !(window.firstResponder is NSText) else { return event }
         switch event.keyCode {

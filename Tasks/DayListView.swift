@@ -7,6 +7,8 @@ struct DayListView: View {
     @Environment(\.undoManager) private var undoManager
     @State private var selection: EKEvent?
     @State private var pendingDelete: EKEvent?
+    /// 正在编辑（浮层打开）的日程
+    @State private var editingEvent: EKEvent?
     @AppStorage("allDayExpanded") private var allDayExpanded = true
     @AppStorage("timedExpanded") private var timedExpanded = true
 
@@ -52,6 +54,15 @@ struct DayListView: View {
         .onDeleteCommand {
             if let selection, selection.calendar.allowsContentModifications { pendingDelete = selection }
         }
+        // 右键菜单与双击编辑。用列表级的 primaryAction，单击选中不会被双击识别拖慢
+        .contextMenu(forSelectionType: EKEvent.self) { events in
+            if let event = events.first, event.calendar.allowsContentModifications {
+                Button("编辑…") { editingEvent = event }
+                Button("删除…", role: .destructive) { pendingDelete = event }
+            }
+        } primaryAction: { events in
+            if let event = events.first, event.calendar.allowsContentModifications { editingEvent = event }
+        }
         .overlay {
             if store.events.isEmpty && !store.isAddingEvent {
                 ContentUnavailableView(store.selectedCalendarIDs.isEmpty ? "未选择日历" : "无日程",
@@ -83,9 +94,9 @@ struct DayListView: View {
     }
 
     private func row(_ event: EKEvent) -> some View {
-        EventRow(event: event, title: event.title ?? "", revision: store.revision) {
-            pendingDelete = event
-        }
+        EventRow(event: event, title: event.title ?? "", revision: store.revision,
+                 isEditing: Binding(get: { editingEvent == event },
+                                    set: { if !$0 { editingEvent = nil } }))
     }
 
     private var deleteTitle: String {
@@ -264,14 +275,13 @@ struct EventRow: View {
     @AppStorage(EmojiMarkers.priorityKey) private var priorityText = EmojiMarkers.defaultPriorities
     /// 重复日程待确认范围的新标题
     @State private var pendingTitle: String?
-    @State private var hovering = false
-    @State private var editing = false
 
     let event: EKEvent
     let title: String
     /// 每次重新加载递增，确保日程其他字段改动后行能刷新
     let revision: Int
-    let onDelete: () -> Void
+    /// 编辑浮层是否打开，由列表统一管理（双击或右键「编辑…」）
+    let isEditing: Binding<Bool>
 
     var body: some View {
         let marked = MarkedTitle(title, statuses: statuses, priorities: priorities)
@@ -304,15 +314,6 @@ struct EventRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if editable && (hovering || editing) {
-                Button("编辑", systemImage: "info.circle") { editing = true }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.accentColor)
-                    .popover(isPresented: $editing, arrowEdge: .trailing) {
-                        EventEditor(event: event) { editing = false }
-                    }
-            }
             Circle()
                 .fill(Color(cgColor: event.calendar.cgColor))
                 .frame(width: 8, height: 8)
@@ -320,12 +321,9 @@ struct EventRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .contextMenu {
-            if editable {
-                Button("编辑…") { editing = true }
-                Button("删除…", role: .destructive, action: onDelete)
-            }
+        // 双击行（List 的 primaryAction）打开编辑浮层，挂在整行上
+        .popover(isPresented: isEditing, arrowEdge: .trailing) {
+            EventEditor(event: event) { isEditing.wrappedValue = false }
         }
         .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingTitle != nil },
                                                              set: { if !$0 { pendingTitle = nil } })) {

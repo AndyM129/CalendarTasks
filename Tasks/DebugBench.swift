@@ -21,6 +21,35 @@ enum DebugBench {
     }
 
     static func runIfRequested() {
+        if UserDefaults.standard.string(forKey: "debugBench") == "arrow" {
+            // 启动 6 秒后向主窗口投递真实形态的 ⌘← 按键（带 .function、.numericPad），看日期是否前移一天
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(6))
+                guard let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }),
+                      let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                                   modifierFlags: [.command, .function, .numericPad],
+                                                   timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                   characters: "\u{F702}", charactersIgnoringModifiers: "\u{F702}",
+                                                   isARepeat: false, keyCode: 123) else { return }
+                let before = window.contentView?.subviews.isEmpty == false
+                NSApp.postEvent(event, atStart: false)
+                try? await Task.sleep(for: .seconds(1))
+                try? "posted=\(before)\n".write(to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"),
+                                                atomically: true, encoding: .utf8)
+            }
+            return
+        }
+        if UserDefaults.standard.string(forKey: "debugBench") == "responder" {
+            // 启动 6 秒后记录主窗口的第一响应者，用来排查快捷键被文本框拦下的问题
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(6))
+                let responder = NSApp.windows.first { $0.isVisible && !($0 is NSPanel) }?.firstResponder
+                let report = "firstResponder=\(responder.map { String(describing: type(of: $0)) } ?? "nil")\n"
+                try? report.write(to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"),
+                                  atomically: true, encoding: .utf8)
+            }
+            return
+        }
         guard UserDefaults.standard.string(forKey: "debugBench") == "resize" else { return }
         Task { @MainActor in
             // 冷启动时窗口出现较慢
