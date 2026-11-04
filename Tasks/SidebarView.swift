@@ -6,6 +6,20 @@ struct SidebarView: View {
     /// 正在编辑的组合；新建时为空名的新组合
     @State private var editingGroup: CalendarGroup?
     @State private var deletingGroup: CalendarGroup?
+    /// 已收起的账户，换行分隔存 UserDefaults
+    @AppStorage("collapsedSources") private var collapsedSourcesText = ""
+    /// 分区标题右侧图标与下方行内计数右对齐所需的内缩
+    private static let headerTrailingInset: CGFloat = 10
+
+    private var collapsedSources: Set<String> {
+        Set(collapsedSourcesText.split(separator: "\n").map(String.init))
+    }
+
+    private func toggleSource(_ source: String) {
+        var sources = collapsedSources
+        if sources.remove(source) == nil { sources.insert(source) }
+        collapsedSourcesText = sources.sorted().joined(separator: "\n")
+    }
 
     var body: some View {
         List {
@@ -34,12 +48,31 @@ struct SidebarView: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                 }
+                .padding(.trailing, Self.headerTrailingInset)
             }
             ForEach(store.calendarGroups, id: \.source) { group in
-                Section(group.source) {
-                    ForEach(group.calendars, id: \.calendarIdentifier) { calendar in
-                        CalendarRow(calendar: calendar)
+                let expanded = !collapsedSources.contains(group.source)
+                Section {
+                    if expanded {
+                        ForEach(group.calendars, id: \.calendarIdentifier) { calendar in
+                            CalendarRow(calendar: calendar)
+                        }
                     }
+                } header: {
+                    Button {
+                        withAnimation(.snappy) { toggleSource(group.source) }
+                    } label: {
+                        HStack {
+                            Text(group.source)
+                            Spacer()
+                            Image(systemName: "chevron.down")
+                                .rotationEffect(.degrees(expanded ? 0 : -90))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, Self.headerTrailingInset)
+                    .help(expanded ? "收起" : "展开")
                 }
             }
         }

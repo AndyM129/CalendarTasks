@@ -37,6 +37,7 @@ struct ContentView: View {
 /// 工具栏：‹ 今天 › + 日期选择器
 private struct DateNavigationToolbar: ToolbarContent {
     @Environment(CalendarStore.self) private var store
+    @State private var pickingDate = false
 
     var body: some ToolbarContent {
         @Bindable var store = store
@@ -50,9 +51,26 @@ private struct DateNavigationToolbar: ToolbarContent {
                 Button("后一天", systemImage: "chevron.right") { store.shiftDay(by: 1) }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
             }
-            DatePicker("日期", selection: dayBinding, displayedComponents: .date)
-                .labelsHidden()
-                .datePickerStyle(.compact)
+        }
+        // 日期文字无背景，点击弹出日历选择
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                pickingDate.toggle()
+            } label: {
+                Text(store.day, format: .dateTime.year().month().day())
+                    .monospacedDigit()
+            }
+            .buttonStyle(.plain)
+            .help("选择日期")
+            .popover(isPresented: $pickingDate, arrowEdge: .bottom) {
+                DatePicker("日期", selection: dayBinding, displayedComponents: .date)
+                    .labelsHidden()
+                    .datePickerStyle(.graphical)
+                    .padding()
+            }
+        }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(placement: .primaryAction) {
             Button("新增日程", systemImage: "plus") {
                 store.searchText = ""
                 store.isAddingEvent = true
@@ -62,11 +80,14 @@ private struct DateNavigationToolbar: ToolbarContent {
         }
     }
 
-    /// 选择器返回的时间统一归到当天 0 点
+    /// 选择器返回的时间统一归到当天 0 点，选中后收起
     private var dayBinding: Binding<Date> {
         Binding(
             get: { store.day },
-            set: { store.day = Calendar.current.startOfDay(for: $0) }
+            set: {
+                store.day = Calendar.current.startOfDay(for: $0)
+                pickingDate = false
+            }
         )
     }
 }
