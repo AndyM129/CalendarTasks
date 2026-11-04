@@ -26,7 +26,13 @@ struct ContentView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: {
                         DebugBench.recordSidebar($0)
                     }
-                    #endif
+            // 验证用：启动参数 -debugPickDate YES，3 秒后打开日期选择浮层
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugPickDate") else { return }
+                try? await Task.sleep(for: .seconds(3))
+                store.isPickingDate = true
+            }
+            #endif
             } detail: {
                 Group {
                     if store.searchText.isEmpty {
@@ -138,7 +144,7 @@ struct ContentView: View {
         withAnimation(.ui) { floatingSidebar = false }
     }
 
-    /// 切换日期的快捷键 ⌘← / ⌘→ / ⌘T。正在编辑文字或在弹窗里时放行，
+    /// 切换日期的快捷键 ⌘← / ⌘→ / ⌘T，以及 ⌘J 打开日期选择。正在编辑文字或在弹窗里时放行，
     /// 留给文本框做移到行首/行尾、选中等操作，避免误切日期
     private func handleDateShortcut(_ event: NSEvent) -> NSEvent? {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
@@ -148,20 +154,21 @@ struct ContentView: View {
         case 123: withAnimation(.ui) { store.shiftDay(by: -1) }
         case 124: withAnimation(.ui) { store.shiftDay(by: 1) }
         default:
-            guard event.charactersIgnoringModifiers == "t", !store.isToday else { return event }
-            withAnimation(.ui) { store.goToday() }
+            switch event.charactersIgnoringModifiers {
+            case "t" where !store.isToday: withAnimation(.ui) { store.goToday() }
+            case "j" where store.searchText.isEmpty: store.isPickingDate = true
+            default: return event
+            }
         }
         return nil
     }
 }
 
-/// 工具栏：‹ 今天 › + 日期选择器
+/// 工具栏：‹ 今天 ›。选日期改为点列表大标题（见 DayHeader）
 private struct DateNavigationToolbar: ToolbarContent {
     @Environment(CalendarStore.self) private var store
-    @State private var pickingDate = false
 
     var body: some ToolbarContent {
-        @Bindable var store = store
         ToolbarItemGroup(placement: .primaryAction) {
             ControlGroup {
                 Button("前一天", systemImage: "chevron.left") { withAnimation(.ui) { store.shiftDay(by: -1) } }
@@ -173,35 +180,6 @@ private struct DateNavigationToolbar: ToolbarContent {
                     .help("后一天（⌘→）")
             }
         }
-        // 日期文字无背景，点击弹出日历选择
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                pickingDate.toggle()
-            } label: {
-                Text(store.day, format: .dateTime.year().month().day())
-                    .monospacedDigit()
-            }
-            .buttonStyle(.plain)
-            .help("选择日期")
-            .popover(isPresented: $pickingDate, arrowEdge: .bottom) {
-                DatePicker("日期", selection: dayBinding, displayedComponents: .date)
-                    .labelsHidden()
-                    .datePickerStyle(.graphical)
-                    .padding()
-            }
-        }
-        .sharedBackgroundVisibility(.hidden)
-    }
-
-    /// 选择器返回的时间统一归到当天 0 点，选中后收起
-    private var dayBinding: Binding<Date> {
-        Binding(
-            get: { store.day },
-            set: { date in
-                withAnimation(.ui) { store.day = Calendar.current.startOfDay(for: date) }
-                pickingDate = false
-            }
-        )
     }
 }
 

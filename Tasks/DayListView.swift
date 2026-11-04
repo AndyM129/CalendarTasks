@@ -13,11 +13,6 @@ struct DayListView: View {
     var body: some View {
         @Bindable var store = store
         List(selection: $selection) {
-            Section {
-                EmptyView()
-            } header: {
-                DayHeader()
-            }
             if !store.allDayEvents.isEmpty {
                 CollapsibleSection(title: "全天", count: store.allDayEvents.count, isExpanded: $allDayExpanded) {
                     ForEach(store.allDayEvents, id: \.self, content: row)
@@ -42,6 +37,15 @@ struct DayListView: View {
             }
         }
         .listStyle(.inset)
+        // 大标题固定在列表上方：放在 List 的分区标题里时，点标题弹出的月历浮层显示不出来
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                DayHeader()
+                    .padding(.horizontal, 20)
+                Divider()
+            }
+            .background(.background)
+        }
         // 换日期、新增、删除、改状态等都会触发重新加载，列表随之做过渡动画
         .animation(.ui, value: store.revision)
         .animation(.ui, value: store.isAddingEvent)
@@ -170,14 +174,36 @@ private struct DayHeader: View {
     @Environment(CalendarStore.self) private var store
     /// 只在跨过阈值时变化，拖动窗口时不会每帧重算标题
     @State private var compact = false
+    @State private var hoveringTitle = false
 
     var body: some View {
+        @Bindable var store = store
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                // 等宽数字：换日期时数字宽度不变，后面不变的字不会被挤动
-                PerCharacterText(text: dayTitle)
-                    .font((compact ? Font.title2 : .largeTitle).bold().monospacedDigit())
+                // 点大标题弹出月历选日期；鼠标移上去时显示 ⌄ 提示可点
+                Button {
+                    store.isPickingDate.toggle()
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        // 等宽数字：换日期时数字宽度不变，后面不变的字不会被挤动
+                        PerCharacterText(text: dayTitle)
+                            .font((compact ? Font.title2 : .largeTitle).bold().monospacedDigit())
+                        Image(systemName: "chevron.down")
+                            .font((compact ? Font.callout : .title3).bold())
+                            .opacity(hoveringTitle || store.isPickingDate ? 1 : 0)
+                    }
                     .foregroundStyle(Color.accentColor)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in withAnimation(.ui) { hoveringTitle = hovering } }
+                .help("选择日期（⌘J）")
+                .popover(isPresented: $store.isPickingDate, arrowEdge: .bottom) {
+                    DatePicker("日期", selection: dayBinding, displayedComponents: .date)
+                        .labelsHidden()
+                        .datePickerStyle(.graphical)
+                        .padding()
+                }
                 Spacer(minLength: 8)
                 Text(store.events.count, format: .number)
                     .font((compact ? Font.title2 : .largeTitle).monospacedDigit())
@@ -196,6 +222,17 @@ private struct DayHeader: View {
 
     private var dayTitle: String {
         store.day.formatted(.dateTime.month().day().weekday(.wide))
+    }
+
+    /// 选择器返回的时间统一归到当天 0 点，选中后收起
+    private var dayBinding: Binding<Date> {
+        Binding(
+            get: { store.day },
+            set: { date in
+                withAnimation(.ui) { store.day = Calendar.current.startOfDay(for: date) }
+                store.isPickingDate = false
+            }
+        )
     }
 
     private var subtitle: String {

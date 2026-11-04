@@ -19,6 +19,8 @@ final class CalendarStore {
     private(set) var revision = 0
     /// 列表末尾是否显示新增输入行
     var isAddingEvent = false
+    /// 日期选择浮层是否打开（点大标题或 ⌘J）
+    var isPickingDate = false
     var searchText = ""
 
     var day: Date = Calendar.current.startOfDay(for: .now) {
