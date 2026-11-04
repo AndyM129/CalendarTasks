@@ -4,6 +4,12 @@ import SwiftUI
 struct TasksApp: App {
     @State private var store = CalendarStore()
 
+    init() {
+        #if DEBUG
+        DebugBench.runIfRequested()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

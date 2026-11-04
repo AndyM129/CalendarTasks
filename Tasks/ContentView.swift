@@ -6,7 +6,10 @@ struct ContentView: View {
 
     @Environment(CalendarStore.self) private var store
     /// 冷启动时还原上次的边栏显示状态（用户手动开关的结果，不受自动收起影响）
-    @AppStorage("sidebarVisible") private var sidebarVisible = true
+    @AppStorage("sidebarVisible") private var savedSidebarVisible = true
+    /// 界面实际用的边栏状态。用 @State 承接再写回 AppStorage：直接改 AppStorage 时视图更新不在
+    /// withAnimation 的事务里，边栏展开收起会没有动画
+    @State private var sidebarVisible = UserDefaults.standard.object(forKey: "sidebarVisible") as? Bool ?? true
     /// 窗口变窄导致的临时收起；窗口变宽后恢复
     @State private var autoCollapsed = false
     /// 自动收起时点边栏按钮，边栏浮在列表上方，用于临时切换日历
@@ -19,6 +22,11 @@ struct ContentView: View {
             NavigationSplitView(columnVisibility: columnVisibility) {
                 SidebarView()
                     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
+                    #if DEBUG
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: {
+                        DebugBench.recordSidebar($0)
+                    }
+                    #endif
             } detail: {
                 Group {
                     if store.searchText.isEmpty {
@@ -43,7 +51,19 @@ struct ContentView: View {
                 }
                 if autoCollapsed { withAnimation(.ui) { floatingSidebar = true } }
             }
+            // 验证用：启动参数 -debugBench sidebar，2 秒后收起边栏、再展开，记录边栏宽度变化过程
+            .task {
+                guard UserDefaults.standard.string(forKey: "debugBench") == "sidebar" else { return }
+                try? await Task.sleep(for: .seconds(4))
+                DebugBench.sidebarWidths.removeAll()
+                columnVisibility.wrappedValue = .detailOnly
+                try? await Task.sleep(for: .seconds(1))
+                columnVisibility.wrappedValue = .all
+                try? await Task.sleep(for: .seconds(1))
+                DebugBench.writeSidebarReport()
+            }
             #endif
+            .onChange(of: sidebarVisible) { _, visible in savedSidebarVisible = visible }
             // 启动时也要取一次宽度（onGeometryChange 不报初始值）
             .background {
                 GeometryReader { proxy in

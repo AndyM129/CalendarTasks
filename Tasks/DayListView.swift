@@ -168,21 +168,19 @@ private struct CollapsibleSection<Content: View>: View {
 
 private struct DayHeader: View {
     @Environment(CalendarStore.self) private var store
+    /// 只在跨过阈值时变化，拖动窗口时不会每帧重算标题
+    @State private var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                // 窗口窄时依次换小一号字体
-                ViewThatFits(in: .horizontal) {
-                    ForEach([Font.largeTitle, .title, .title2, .title3], id: \.self) { font in
-                        PerCharacterText(text: dayTitle)
-                            .font(font.bold())
-                    }
-                }
-                .foregroundStyle(Color.accentColor)
+                // 等宽数字：换日期时数字宽度不变，后面不变的字不会被挤动
+                PerCharacterText(text: dayTitle)
+                    .font((compact ? Font.title2 : .largeTitle).bold().monospacedDigit())
+                    .foregroundStyle(Color.accentColor)
                 Spacer(minLength: 8)
                 Text(store.events.count, format: .number)
-                    .font(.largeTitle)
+                    .font((compact ? Font.title2 : .largeTitle).monospacedDigit())
                     .foregroundStyle(Color.accentColor)
                     .contentTransition(.numericText())
             }
@@ -192,6 +190,8 @@ private struct DayHeader: View {
         }
         .textCase(nil)
         .padding(.vertical, 8)
+        // 窄窗口换小一号字体
+        .onGeometryChange(for: Bool.self) { $0.size.width < 320 } action: { compact = $0 }
     }
 
     private var dayTitle: String {
