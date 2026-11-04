@@ -9,6 +9,7 @@ struct DayListView: View {
     @State private var pendingDelete: EKEvent?
     /// 正在编辑（浮层打开）的日程
     @State private var editingEvent: EKEvent?
+    @FocusState private var listFocused: Bool
     // 折叠状态用 @State 驱动界面、再写回 UserDefaults：直接绑 @AppStorage 时更新不在 withAnimation 事务里，折叠没有动画
     @AppStorage("allDayExpanded") private var savedAllDayExpanded = true
     @AppStorage("timedExpanded") private var savedTimedExpanded = true
@@ -17,31 +18,38 @@ struct DayListView: View {
 
     var body: some View {
         @Bindable var store = store
-        List(selection: $selection) {
-            if !store.allDayEvents.isEmpty {
-                CollapsibleSection(title: "全天", count: store.allDayEvents.count, isExpanded: $allDayExpanded) {
-                    ForEach(store.allDayEvents, id: \.self, content: row)
+        // 用 ScrollView + LazyVStack 而不是 List：List 底层表格增删行是一步完成的，分组折叠、增删日程都没有过渡动画（实测）
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if !store.allDayEvents.isEmpty {
+                    CollapsibleSection(title: "全天", count: store.allDayEvents.count, isExpanded: $allDayExpanded) {
+                        ForEach(store.allDayEvents, id: \.self, content: row)
+                    }
                 }
-            }
-            if !store.timedEvents.isEmpty {
-                CollapsibleSection(title: "日程", count: store.timedEvents.count, isExpanded: $timedExpanded) {
-                    ForEach(store.timedEvents, id: \.self, content: row)
+                if !store.timedEvents.isEmpty {
+                    CollapsibleSection(title: "日程", count: store.timedEvents.count, isExpanded: $timedExpanded) {
+                        ForEach(store.timedEvents, id: \.self, content: row)
+                    }
                 }
-            }
-            Section {
                 if store.isAddingEvent {
                     NewEventRow()
+                        .padding(.horizontal, 20)
+                        .transition(.opacity)
                 }
                 // 点列表末尾空白处新增
                 Color.clear
                     .frame(height: 80)
                     .contentShape(Rectangle())
-                    .onTapGesture { store.isAddingEvent = true }
-                    .selectionDisabled()
-                    .listRowSeparator(.hidden)
+                    .onTapGesture { withAnimation(.ui) { store.isAddingEvent = true } }
             }
+            .padding(.vertical, 8)
         }
-        .listStyle(.inset)
+        // 可获得焦点，Delete 键和 ↑↓ 选择才能生效；不画系统焦点框
+        .focusable()
+        .focused($listFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.upArrow) { moveSelection(by: -1) }
+        .onKeyPress(.downArrow) { moveSelection(by: 1) }
         .onChange(of: allDayExpanded) { _, expanded in savedAllDayExpanded = expanded }
         .onChange(of: timedExpanded) { _, expanded in savedTimedExpanded = expanded }
         #if DEBUG
@@ -51,6 +59,20 @@ struct DayListView: View {
             try? await Task.sleep(for: .seconds(3))
             selection = store.allDayEvents.first ?? store.timedEvents.first
             if UserDefaults.standard.bool(forKey: "debugEditFirst") { editingEvent = selection }
+        }
+        // 验证用：-debugBench collapse，4 秒后收起「全天」、再展开，记录「日程」分组标题的位置变化
+        .task {
+            guard UserDefaults.standard.string(forKey: "debugBench") == "collapse" else { return }
+            try? await Task.sleep(for: .seconds(4))
+            DebugBench.samples.removeAll()
+            // 动画放慢到 3 秒并写标记文件，外部在动画中途截屏，看有没有中间态
+            try? "start\n".write(to: FileManager.default.temporaryDirectory.appending(path: "collapse-start"),
+                                  atomically: true, encoding: .utf8)
+            withAnimation(.linear(duration: 3)) { allDayExpanded = false }
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation(.ui) { allDayExpanded = true }
+            try? await Task.sleep(for: .seconds(1))
+            DebugBench.writeSamples()
         }
         #endif
         // 大标题固定在列表上方：放在 List 的分区标题里时，点标题弹出的月历浮层显示不出来
@@ -67,15 +89,6 @@ struct DayListView: View {
         .animation(.ui, value: store.isAddingEvent)
         .onDeleteCommand {
             if let selection, selection.calendar.allowsContentModifications { pendingDelete = selection }
-        }
-        // 右键菜单与双击编辑。用列表级的 primaryAction，单击选中不会被双击识别拖慢
-        .contextMenu(forSelectionType: EKEvent.self) { events in
-            if let event = events.first, event.calendar.allowsContentModifications {
-                Button("编辑…") { editingEvent = event }
-                Button("删除…", role: .destructive) { pendingDelete = event }
-            }
-        } primaryAction: { events in
-            if let event = events.first, event.calendar.allowsContentModifications { editingEvent = event }
         }
         .overlay {
             if store.events.isEmpty && !store.isAddingEvent {
@@ -107,17 +120,41 @@ struct DayListView: View {
         }
     }
 
+    /// 单击选中（立即生效），双击打开编辑浮层，右键菜单编辑 / 删除；选中时浅灰圆角底
     private func row(_ event: EKEvent) -> some View {
-        EventRow(event: event, title: event.title ?? "", revision: store.revision,
-                 isEditing: Binding(get: { editingEvent == event },
-                                    set: { if !$0 { editingEvent = nil } }))
-            .background(SystemSelectionHighlightRemover())
-            // 系统的强调蓝选中底太抢眼，改为浅灰圆角底
-            .listRowBackground(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(selection == event ? 0.08 : 0))
-                    .padding(.horizontal, 6)
-            )
+        let editable = event.calendar.allowsContentModifications
+        return VStack(spacing: 0) {
+            EventRow(event: event, title: event.title ?? "", revision: store.revision,
+                     isEditing: Binding(get: { editingEvent == event },
+                                        set: { if !$0 { editingEvent = nil } }))
+                .padding(.horizontal, 12)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(selection == event ? 0.08 : 0)))
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { if editable { editingEvent = event } }
+                .simultaneousGesture(TapGesture().onEnded {
+                    selection = event
+                    listFocused = true
+                })
+                .contextMenu {
+                    if editable {
+                        Button("编辑…") { editingEvent = event }
+                        Button("删除…", role: .destructive) { pendingDelete = event }
+                    }
+                }
+            Divider().padding(.leading, 56)
+        }
+        .padding(.horizontal, 8)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    /// ↑↓ 在可见日程间移动选中
+    private func moveSelection(by step: Int) -> KeyPress.Result {
+        let visible = (allDayExpanded ? store.allDayEvents : []) + (timedExpanded ? store.timedEvents : [])
+        guard !visible.isEmpty else { return .ignored }
+        let index = selection.flatMap { visible.firstIndex(of: $0) }.map { $0 + step } ?? (step > 0 ? 0 : visible.count - 1)
+        selection = visible[min(max(index, 0), visible.count - 1)]
+        return .handled
     }
 
     private var deleteTitle: String {
@@ -170,9 +207,7 @@ private struct CollapsibleSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        Section {
-            if isExpanded { content }
-        } header: {
+        VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(.ui) { isExpanded.toggle() }
             } label: {
@@ -189,11 +224,27 @@ private struct CollapsibleSection<Content: View>: View {
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                         .foregroundStyle(.secondary)
                 }
-                .textCase(nil)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            #if DEBUG
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                DebugBench.record(title, $0)
+            }
+            #endif
+            Divider().padding(.horizontal, 20)
+            // 收起时内容整体移除，下面的分组随高度变化滑上来；内容单独裁切，上移时不会盖到分组标题
+            VStack(spacing: 0) {
+                if isExpanded {
+                    VStack(spacing: 0) { content }
+                        .padding(.top, 4)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .clipped()
         }
     }
 }
@@ -379,17 +430,22 @@ struct EventRow: View {
         self.pendingTitle = nil
     }
 
-    /// 全天，或起止时间；跨天时带日期
+    /// 简短格式：同一天「08:00 ~ 09:00」，跨天「11/04 08:00 ~ 11/05 08:00」；全天跨天「全天 11/04 ~ 11/06」
     private var timeText: String {
         guard let start = event.startDate, let end = event.endDate else { return "" }
-        if event.isAllDay { return "全天" }
         let calendar = Calendar.current
-        let style: (Date) -> String = { date in
-            calendar.isDate(date, inSameDayAs: start) && calendar.isDate(start, inSameDayAs: end)
-                ? date.formatted(date: .omitted, time: .shortened)
-                : date.formatted(.dateTime.month().day().hour().minute())
+        let day = { (date: Date) in String(format: "%02d/%02d", calendar.component(.month, from: date),
+                                           calendar.component(.day, from: date)) }
+        let time = { (date: Date) in String(format: "%02d:%02d", calendar.component(.hour, from: date),
+                                            calendar.component(.minute, from: date)) }
+        if event.isAllDay {
+            // 全天日程的结束可能是最后一天 23:59:59 或次日 0 点，往前退一秒都落在最后一天
+            let lastDay = end.addingTimeInterval(-1)
+            return calendar.isDate(start, inSameDayAs: lastDay) ? "全天" : "全天 \(day(start)) ~ \(day(lastDay))"
         }
-        return "\(style(start)) – \(style(end))"
+        return calendar.isDate(start, inSameDayAs: end)
+            ? "\(time(start)) ~ \(time(end))"
+            : "\(day(start)) \(time(start)) ~ \(day(end)) \(time(end))"
     }
 }
 

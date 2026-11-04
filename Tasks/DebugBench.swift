@@ -8,6 +8,20 @@ enum DebugBench {
     /// 边栏右边缘的位置变化（时间, x），用来判断展开收起是否有逐帧动画
     static var sidebarWidths: [(Double, CGFloat)] = []
 
+    /// 通用采样：(时间, 标签, 值)，用来判断某个位置变化是逐帧动画还是一步跳变
+    static var samples: [(Double, String, CGFloat)] = []
+
+    static func record(_ tag: String, _ value: CGFloat) {
+        samples.append((CACurrentMediaTime(), tag, value))
+    }
+
+    static func writeSamples() {
+        let start = samples.first?.0 ?? 0
+        let lines = samples.map { String(format: "%.3fs %@ %.1f", $0.0 - start, $0.1, $0.2) }
+        try? ("samples=\(samples.count)\n" + lines.joined(separator: "\n") + "\n").write(
+            to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"), atomically: true, encoding: .utf8)
+    }
+
     static func recordSidebar(_ maxX: CGFloat) {
         sidebarWidths.append((CACurrentMediaTime(), maxX))
     }
@@ -25,16 +39,19 @@ enum DebugBench {
             // 配合 -debugEditFirst：编辑浮层打开后向焦点输入框投递回车，报告前后文字与选中范围（只改草稿，不存储）
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(6))
-                guard let window = NSApp.keyWindow, let textView = window.firstResponder as? NSTextView,
+                // 浮层是独立的 NSPopover 窗口，不一定是 keyWindow，逐个窗口找焦点在文本框上的那个
+                let window = NSApp.windows.first { $0.isVisible && $0.firstResponder is NSTextView }
+                let keyInfo = "key=\(NSApp.keyWindow.map { String(describing: type(of: $0)) } ?? "nil")"
+                guard let window, let textView = window.firstResponder as? NSTextView,
                       let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
                                                    timestamp: 0, windowNumber: window.windowNumber, context: nil,
                                                    characters: "\r", charactersIgnoringModifiers: "\r",
                                                    isARepeat: false, keyCode: 36) else {
-                    try? "no text view focused\n".write(to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"),
+                    try? "no text view focused \(keyInfo) windows=\(NSApp.windows.filter(\.isVisible).map { String(describing: type(of: $0)) })\n".write(to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"),
                                                          atomically: true, encoding: .utf8)
                     return
                 }
-                let before = "selection=\(textView.selectedRange()) length=\((textView.string as NSString).length)"
+                let before = "\(keyInfo) window=\(type(of: window)) selection=\(textView.selectedRange()) length=\((textView.string as NSString).length)"
                 NSApp.postEvent(event, atStart: false)
                 try? await Task.sleep(for: .seconds(1))
                 let after = "newlines=\(textView.string.filter(\.isNewline).count) length=\((textView.string as NSString).length) popoverOpen=\(textView.window != nil)"

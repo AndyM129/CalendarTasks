@@ -34,12 +34,22 @@ struct GrowingTextView: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         textView.string = text
         if focusOnAppear {
-            DispatchQueue.main.async {
-                textView.window?.makeFirstResponder(textView)
-                textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
-            }
+            // 放在 NSPopover 里时，创建视图那一刻还没挂进窗口，等挂进窗口后再取焦点
+            focusWhenInWindow(textView, attempts: 20)
         }
         return scrollView
+    }
+
+    /// 光标放在末尾，不全选
+    private func focusWhenInWindow(_ textView: NSTextView, attempts: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            guard let window = textView.window else {
+                if attempts > 0 { focusWhenInWindow(textView, attempts: attempts - 1) }
+                return
+            }
+            window.makeFirstResponder(textView)
+            textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+        }
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
