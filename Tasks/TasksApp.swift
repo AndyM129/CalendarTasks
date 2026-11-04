@@ -36,6 +36,13 @@ struct TasksApp: App {
 }
 
 extension Animation {
-    /// 全局统一的界面过渡：0.3 秒缓入缓出曲线
-    static let ui = Animation.easeInOut(duration: 0.3)
+    /// 设置里「动画时长」的存储键与默认值
+    static let durationKey = "animationDuration"
+    static let defaultDuration = 0.3
+
+    /// 全局统一的界面过渡：无回弹的平滑弹簧（与 iOS 导航 push 同类的曲线），时长可在设置里调
+    static var ui: Animation {
+        let stored = UserDefaults.standard.double(forKey: durationKey)
+        return .smooth(duration: stored > 0 ? stored : defaultDuration)
+    }
 }

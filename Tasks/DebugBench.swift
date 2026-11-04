@@ -17,7 +17,7 @@ enum DebugBench {
 
     static func writeSamples() {
         let start = samples.first?.0 ?? 0
-        let lines = samples.map { String(format: "%.3fs %@ %.1f", $0.0 - start, $0.1, $0.2) }
+        let lines = samples.map { String(format: "%.3fs %@ %.3f", $0.0 - start, $0.1, $0.2) }
         try? ("samples=\(samples.count)\n" + lines.joined(separator: "\n") + "\n").write(
             to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"), atomically: true, encoding: .utf8)
     }
