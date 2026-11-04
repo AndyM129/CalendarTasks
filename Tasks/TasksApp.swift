@@ -17,6 +17,17 @@ struct TasksApp: App {
                 .frame(minWidth: 280, minHeight: 320)
         }
         .defaultSize(width: 980, height: 720)
+        .commands {
+            // 工具栏不放新增按钮；「文件 › 新增日程 ⌘N」代替默认的新建窗口
+            CommandGroup(replacing: .newItem) {
+                Button("新增日程") {
+                    store.searchText = ""
+                    withAnimation(.ui) { store.isAddingEvent = true }
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(!store.hasAccess || store.calendarForNewEvents == nil)
+            }
+        }
 
         Settings {
             SettingsView()

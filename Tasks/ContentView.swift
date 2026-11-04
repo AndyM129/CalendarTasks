@@ -191,14 +191,6 @@ private struct DateNavigationToolbar: ToolbarContent {
             }
         }
         .sharedBackgroundVisibility(.hidden)
-        ToolbarItem(placement: .primaryAction) {
-            Button("新增日程", systemImage: "plus") {
-                store.searchText = ""
-                withAnimation(.ui) { store.isAddingEvent = true }
-            }
-            .keyboardShortcut("n", modifiers: .command)
-            .disabled(store.calendarForNewEvents == nil)
-        }
     }
 
     /// 选择器返回的时间统一归到当天 0 点，选中后收起
