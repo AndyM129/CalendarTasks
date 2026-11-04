@@ -1,9 +1,10 @@
 #!/bin/zsh
 # 编译并（重新）启动「日历任务」，供 Agent 运行、验证、调试时调用。
-# 用法：scripts/tasks-run.sh [--icon] [--size <宽>x<高>] [--shot <截图路径>]
+# 用法：scripts/tasks-run.sh [--icon] [--size <宽>x<高>] [--shot <截图路径>] [-- <传给 App 的启动参数>]
 #   --icon  换过图标后刷新系统图标缓存（更新修改时间 + lsregister）
 #   --size  以指定窗口尺寸（pt）、边栏展开启动，只影响本次，用于检查窗口自适应
 #   --shot  启动 8 秒后截全屏到指定路径（带 --size 冷启动时窗口出现较慢）
+#   --      之后的参数原样传给 App，如 -- -debugFloatingSidebar YES
 set -euo pipefail
 
 cd "${0:A:h}/.."
@@ -15,11 +16,13 @@ FRAME_KEY='NSWindow Frame SwiftUI.ModifiedContent<SwiftUI.ModifiedContent<Tasks.
 refresh_icon=false
 shot=""
 size=""
+app_args=()
 while (( $# )); do
     case "$1" in
         --icon) refresh_icon=true ;;
         --shot) shot="$2"; shift ;;
         --size) size="$2"; shift ;;
+        --) shift; app_args=("$@"); break ;;
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
     shift
@@ -47,7 +50,9 @@ if [[ -n "$size" ]]; then
     # 通过启动参数覆盖窗口尺寸记录（并跳过窗口状态恢复），不改用户的偏好设置
     w=${size%x*}; h=${size#*x}
     open "$APP" --args -ApplePersistenceIgnoreState YES "-$FRAME_KEY" "200 200 $w $h 0 0 1728 1084 " \
-        -sidebarVisible YES
+        -sidebarVisible YES "${app_args[@]}"
+elif (( ${#app_args} )); then
+    open "$APP" --args "${app_args[@]}"
 else
     open "$APP"
 fi

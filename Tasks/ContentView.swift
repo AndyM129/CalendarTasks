@@ -9,6 +9,8 @@ struct ContentView: View {
     @AppStorage("sidebarVisible") private var sidebarVisible = true
     /// 窗口变窄导致的临时收起；窗口变宽后恢复
     @State private var autoCollapsed = false
+    /// 自动收起时点边栏按钮，边栏浮在列表上方，用于临时切换日历
+    @State private var floatingSidebar = false
 
     var body: some View {
         @Bindable var store = store
@@ -29,8 +31,29 @@ struct ContentView: View {
                 .animation(.snappy, value: store.searchText.isEmpty)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 640)
             }
-            .onGeometryChange(for: Bool.self) { $0.size.width < Self.autoCollapseWidth } action: { narrow in
-                withAnimation(.snappy) { autoCollapsed = narrow }
+            .overlay { floatingSidebarOverlay }
+            #if DEBUG
+            // 验证用：启动参数 -debugFloatingSidebar YES 直接打开浮动边栏
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugFloatingSidebar") else { return }
+                // 冷启动时窗口出现较慢，等到进入自动收起状态再打开
+                for _ in 0..<30 where !autoCollapsed {
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                if autoCollapsed { withAnimation(.snappy) { floatingSidebar = true } }
+            }
+            #endif
+            // 启动时也要取一次宽度（onGeometryChange 不报初始值）
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.onChange(of: proxy.size.width < Self.autoCollapseWidth, initial: true) { _, narrow in
+                        withAnimation(.snappy) {
+                            autoCollapsed = narrow
+                            // 窗口变宽后改回常规两栏，不再浮动
+                            if !narrow { floatingSidebar = false }
+                        }
+                    }
+                }
             }
             .searchable(text: $store.searchText, placement: .toolbar, prompt: "搜索")
             .toolbar(removing: .title)
@@ -45,15 +68,43 @@ struct ContentView: View {
             get: { sidebarVisible && !autoCollapsed ? .all : .detailOnly },
             set: { visibility in
                 let show = visibility != .detailOnly
-                // 已因窗口窄而收起时，系统再报的收起不记成用户偏好
-                if !show && autoCollapsed { return }
                 withAnimation(.snappy) {
-                    // 窄窗口下手动展开时取消自动收起，系统会把窗口撑宽到放得下两栏
-                    if show { autoCollapsed = false }
-                    sidebarVisible = show
+                    if autoCollapsed {
+                        // 窄窗口下边栏按钮只开关浮动边栏，不改两栏布局和用户偏好
+                        if show { floatingSidebar.toggle() }
+                    } else {
+                        sidebarVisible = show
+                    }
                 }
             }
         )
+    }
+
+    /// 浮动边栏：全窗口蒙层 + 左侧边栏，点蒙层或按 Esc 收起
+    @ViewBuilder private var floatingSidebarOverlay: some View {
+        if floatingSidebar {
+            ZStack(alignment: .leading) {
+                Color.black.opacity(0.3)
+                    .contentShape(Rectangle())
+                    .onTapGesture { closeFloatingSidebar() }
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                // 边栏留在工具栏下方，不挡红绿灯和工具栏按钮
+                SidebarView()
+                    .frame(width: 260)
+                    .frame(maxHeight: .infinity)
+                    .background(.regularMaterial)
+                    .clipShape(.rect(cornerRadius: 12))
+                    .shadow(radius: 12)
+                    .padding(8)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            .onExitCommand { closeFloatingSidebar() }
+        }
+    }
+
+    private func closeFloatingSidebar() {
+        withAnimation(.snappy) { floatingSidebar = false }
     }
 }
 
