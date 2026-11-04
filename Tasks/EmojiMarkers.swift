@@ -61,3 +61,17 @@ struct MarkedTitle: Equatable {
         return items.first { EmojiMarkers.normalized($0) == key }
     }
 }
+
+/// 标题里的「#标签」：前面是开头或空白、到下一个空白为止，如「把 KR2 补上 #百度文库」里的「#百度文库」。
+/// 只用于列表显示（标签挪到副标题行），写回日历的标题不变
+enum TitleTags {
+    private static let pattern = try! Regex<(Substring, Substring)>(#"(?:^|\s)(#[^\s#]+)"#)
+
+    static func split(_ text: String) -> (text: String, tags: [String]) {
+        let tags = text.matches(of: pattern).map { String($0.output.1) }
+        guard !tags.isEmpty else { return (text, []) }
+        let remaining = text.replacing(pattern) { _ in " " }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (remaining, tags)
+    }
+}

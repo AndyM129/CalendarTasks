@@ -21,6 +21,23 @@ enum DebugBench {
     }
 
     static func runIfRequested() {
+        if UserDefaults.standard.string(forKey: "debugBench") == "highlight" {
+            // 启动 6 秒后报告各表格的选中高亮样式与选中行，屏幕锁定时也能验证
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(6))
+                var lines: [String] = []
+                func walk(_ view: NSView) {
+                    if let table = view as? NSTableView {
+                        lines.append("table rows=\(table.numberOfRows) style=\(table.selectionHighlightStyle.rawValue) selected=\(Array(table.selectedRowIndexes))")
+                    }
+                    view.subviews.forEach(walk)
+                }
+                NSApp.windows.compactMap(\.contentView).forEach(walk)
+                try? (lines.joined(separator: "\n") + "\n").write(
+                    to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"), atomically: true, encoding: .utf8)
+            }
+            return
+        }
         if UserDefaults.standard.string(forKey: "debugBench") == "arrow" {
             // 启动 6 秒后向主窗口投递真实形态的 ⌘← 按键（带 .function、.numericPad），看日期是否前移一天
             Task { @MainActor in

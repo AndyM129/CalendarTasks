@@ -39,6 +39,14 @@ struct DayListView: View {
             }
         }
         .listStyle(.inset)
+        #if DEBUG
+        // 验证用：启动参数 -debugSelectFirst YES 选中第一条日程
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugSelectFirst") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            selection = store.allDayEvents.first ?? store.timedEvents.first
+        }
+        #endif
         // 大标题固定在列表上方：放在 List 的分区标题里时，点标题弹出的月历浮层显示不出来
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
@@ -97,6 +105,13 @@ struct DayListView: View {
         EventRow(event: event, title: event.title ?? "", revision: store.revision,
                  isEditing: Binding(get: { editingEvent == event },
                                     set: { if !$0 { editingEvent = nil } }))
+            .background(SystemSelectionHighlightRemover())
+            // 系统的强调蓝选中底太抢眼，改为浅灰圆角底
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(selection == event ? 0.08 : 0))
+                    .padding(.horizontal, 6)
+            )
     }
 
     private var deleteTitle: String {
@@ -307,11 +322,20 @@ struct EventRow: View {
                     Button("清除状态") { setStatus(nil, in: marked) }
                 }
             }
+            // 标题里的 #标签 挪到副标题行，只影响显示
+            let (bodyText, tags) = TitleTags.split(marked.text)
             VStack(alignment: .leading, spacing: 2) {
-                Text((marked.priority ?? "") + (marked.text.isEmpty ? "新日程" : marked.text))
-                Text(timeText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text((marked.priority ?? "") + (bodyText.isEmpty ? (marked.text.isEmpty ? "新日程" : marked.text) : bodyText))
+                HStack(spacing: 6) {
+                    Text(timeText)
+                    ForEach(bodyText.isEmpty ? [] : tags, id: \.self) { tag in
+                        Text(tag)
+                            .foregroundStyle(Color.accentColor.opacity(0.8))
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
             Spacer()
             Circle()
