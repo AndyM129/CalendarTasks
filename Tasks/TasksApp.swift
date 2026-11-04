@@ -11,5 +11,9 @@ struct TasksApp: App {
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 980, height: 720)
+
+        Settings {
+            SettingsView()
+        }
     }
 }

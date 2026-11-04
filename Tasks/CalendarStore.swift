@@ -158,6 +158,23 @@ final class CalendarStore {
         dayEventsAllCalendars.count { $0.calendar.calendarIdentifier == calendar.calendarIdentifier }
     }
 
+    // MARK: - 写回
+
+    /// 最近一次写入失败的说明，界面弹窗展示后清空
+    var lastError: String?
+
+    func updateTitle(of event: EKEvent, to title: String, span: EKSpan) {
+        let oldTitle = event.title
+        event.title = title
+        do {
+            try eventStore.save(event, span: span, commit: true)
+        } catch {
+            event.title = oldTitle
+            lastError = error.localizedDescription
+        }
+        reloadEvents()
+    }
+
     // MARK: - 加载
 
     private func reloadAll() {
