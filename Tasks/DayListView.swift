@@ -4,10 +4,13 @@ import SwiftUI
 /// 右侧：当日、所选日历中的日程。全天在前，定时按开始时间。
 struct DayListView: View {
     @Environment(CalendarStore.self) private var store
+    @Environment(\.undoManager) private var undoManager
+    @State private var selection: EKEvent?
+    @State private var pendingDelete: EKEvent?
 
     var body: some View {
         @Bindable var store = store
-        List {
+        List(selection: $selection) {
             Section {
                 EmptyView()
             } header: {
@@ -15,21 +18,50 @@ struct DayListView: View {
             }
             if !store.allDayEvents.isEmpty {
                 Section("全天") {
-                    ForEach(store.allDayEvents, id: \.self) { EventRow(event: $0, title: $0.title ?? "") }
+                    ForEach(store.allDayEvents, id: \.self, content: row)
                 }
             }
             if !store.timedEvents.isEmpty {
                 Section("日程") {
-                    ForEach(store.timedEvents, id: \.self) { EventRow(event: $0, title: $0.title ?? "") }
+                    ForEach(store.timedEvents, id: \.self, content: row)
                 }
+            }
+            Section {
+                if store.isAddingEvent {
+                    NewEventRow()
+                }
+                // 点列表末尾空白处新增
+                Color.clear
+                    .frame(height: 80)
+                    .contentShape(Rectangle())
+                    .onTapGesture { store.isAddingEvent = true }
+                    .selectionDisabled()
+                    .listRowSeparator(.hidden)
             }
         }
         .listStyle(.inset)
+        .onDeleteCommand {
+            if let selection, selection.calendar.allowsContentModifications { pendingDelete = selection }
+        }
         .overlay {
-            if store.events.isEmpty {
+            if store.events.isEmpty && !store.isAddingEvent {
                 ContentUnavailableView(store.selectedCalendarIDs.isEmpty ? "未选择日历" : "无日程",
-                                       systemImage: "calendar")
+                                       systemImage: "calendar",
+                                       description: Text(store.selectedCalendarIDs.isEmpty ? "" : "点空白处或按 ⌘N 新增"))
+                    .allowsHitTesting(false)
             }
+        }
+        .confirmationDialog(deleteTitle, isPresented: Binding(get: { pendingDelete != nil },
+                                                              set: { if !$0 { pendingDelete = nil } }),
+                            presenting: pendingDelete) { event in
+            if event.hasRecurrenceRules {
+                Button("仅删除此次", role: .destructive) { delete(event, span: .thisEvent) }
+                Button("删除将来所有", role: .destructive) { delete(event, span: .futureEvents) }
+            } else {
+                Button("删除", role: .destructive) { delete(event, span: .thisEvent) }
+            }
+        } message: { event in
+            Text(event.hasRecurrenceRules ? "这是重复日程，删除后无法撤销。" : "可以用 ⌘Z 撤销。")
         }
         .alert("无法保存日程", isPresented: Binding(get: { store.lastError != nil },
                                                 set: { if !$0 { store.lastError = nil } })) {
@@ -37,6 +69,57 @@ struct DayListView: View {
         } message: {
             Text(store.lastError ?? "")
         }
+    }
+
+    private func row(_ event: EKEvent) -> some View {
+        EventRow(event: event, title: event.title ?? "", revision: store.revision) {
+            pendingDelete = event
+        }
+    }
+
+    private var deleteTitle: String {
+        "删除日程「\(pendingDelete?.title ?? "")」？"
+    }
+
+    private func delete(_ event: EKEvent, span: EKSpan) {
+        store.delete(event, span: span, undoManager: undoManager)
+        selection = nil
+    }
+}
+
+/// 列表末尾的输入行：回车新增，Esc 或失焦取消
+private struct NewEventRow: View {
+    @Environment(CalendarStore.self) private var store
+    @State private var title = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(EmojiMarkers.placeholder)
+                .font(.title3)
+                .opacity(0.3)
+                .frame(width: 24, height: 24)
+            TextField("新日程", text: $title)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .onSubmit(submit)
+                .onExitCommand {
+                    title = ""
+                    store.isAddingEvent = false
+                }
+        }
+        .padding(.vertical, 4)
+        .onAppear { focused = true }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { submit() }
+        }
+    }
+
+    private func submit() {
+        let text = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { store.createEvent(title: text) }
+        title = ""
+        store.isAddingEvent = false
     }
 }
 
@@ -75,9 +158,14 @@ struct EventRow: View {
     @AppStorage(EmojiMarkers.priorityKey) private var priorityText = EmojiMarkers.defaultPriorities
     /// 重复日程待确认范围的新标题
     @State private var pendingTitle: String?
+    @State private var hovering = false
+    @State private var editing = false
 
     let event: EKEvent
     let title: String
+    /// 每次重新加载递增，确保日程其他字段改动后行能刷新
+    let revision: Int
+    let onDelete: () -> Void
 
     var body: some View {
         let marked = MarkedTitle(title, statuses: statuses, priorities: priorities)
@@ -110,12 +198,29 @@ struct EventRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if editable && (hovering || editing) {
+                Button("编辑", systemImage: "info.circle") { editing = true }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.accentColor)
+                    .popover(isPresented: $editing, arrowEdge: .trailing) {
+                        EventEditor(event: event) { editing = false }
+                    }
+            }
             Circle()
                 .fill(Color(cgColor: event.calendar.cgColor))
                 .frame(width: 8, height: 8)
                 .help(event.calendar.title)
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .contextMenu {
+            if editable {
+                Button("编辑…") { editing = true }
+                Button("删除…", role: .destructive, action: onDelete)
+            }
+        }
         .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingTitle != nil },
                                                              set: { if !$0 { pendingTitle = nil } })) {
             Button("仅此次") { commit(span: .thisEvent) }

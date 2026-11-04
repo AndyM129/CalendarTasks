@@ -15,6 +15,11 @@ final class CalendarStore {
     /// 当日所有日历中的日程，用于计数
     private(set) var dayEventsAllCalendars: [EKEvent] = []
     private(set) var todayCountSelected = 0
+    /// 日程数据版本，每次重新加载递增
+    private(set) var revision = 0
+    /// 列表末尾是否显示新增输入行
+    var isAddingEvent = false
+    var searchText = ""
 
     var day: Date = Calendar.current.startOfDay(for: .now) {
         didSet { reloadEvents() }
@@ -164,15 +169,96 @@ final class CalendarStore {
     var lastError: String?
 
     func updateTitle(of event: EKEvent, to title: String, span: EKSpan) {
-        let oldTitle = event.title
         event.title = title
+        save(event, span: span)
+    }
+
+    /// 保存改动；失败时撤回未保存的修改并记录原因
+    @discardableResult
+    func save(_ event: EKEvent, span: EKSpan) -> Bool {
+        defer { reloadEvents() }
         do {
             try eventStore.save(event, span: span, commit: true)
+            return true
         } catch {
-            event.title = oldTitle
+            event.rollback()
             lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    // MARK: - 新增
+
+    /// 新日程所在日历：系统默认日历在勾选中时用它，否则用勾选里第一个可编辑的日历
+    var calendarForNewEvents: EKCalendar? {
+        let editable = calendars.filter { isSelected($0) && $0.allowsContentModifications }
+        if let fallback = eventStore.defaultCalendarForNewEvents,
+           editable.contains(where: { $0.calendarIdentifier == fallback.calendarIdentifier }) {
+            return fallback
+        }
+        return editable.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }.first
+    }
+
+    /// 只给标题时默认为当日全天日程
+    func createEvent(title: String) {
+        guard let calendar = calendarForNewEvents else {
+            lastError = "所选日历都不可编辑，请先勾选一个可编辑的日历。"
+            return
+        }
+        let event = EKEvent(eventStore: eventStore)
+        event.title = title
+        event.calendar = calendar
+        event.isAllDay = true
+        event.startDate = day
+        event.endDate = day
+        save(event, span: .thisEvent)
+    }
+
+    // MARK: - 删除与撤销
+
+    /// 删除日程。非重复日程可用 ⌘Z 撤销（按快照重建）；重复日程删除后不可撤销
+    func delete(_ event: EKEvent, span: EKSpan, undoManager: UndoManager?) {
+        let snapshot = EventSnapshot(event)
+        let undoable = !event.hasRecurrenceRules
+        do {
+            try eventStore.remove(event, span: span, commit: true)
+        } catch {
+            lastError = error.localizedDescription
+            reloadEvents()
+            return
         }
         reloadEvents()
+        guard undoable, let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { store in
+            store.restore(snapshot, undoManager: undoManager)
+        }
+        undoManager.setActionName("删除日程")
+    }
+
+    private func restore(_ snapshot: EventSnapshot, undoManager: UndoManager) {
+        let event = snapshot.makeEvent(in: eventStore)
+        guard save(event, span: .thisEvent) else { return }
+        undoManager.registerUndo(withTarget: self) { store in
+            store.delete(event, span: .thisEvent, undoManager: undoManager)
+        }
+        undoManager.setActionName("删除日程")
+    }
+
+    // MARK: - 搜索
+
+    /// 在勾选日历中搜索当日前后各一年的标题 / 地点 / 备注
+    func search(_ query: String) -> [EKEvent] {
+        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = calendars.filter(isSelected)
+        guard !keyword.isEmpty, !selected.isEmpty,
+              let start = Calendar.current.date(byAdding: .year, value: -1, to: day),
+              let end = Calendar.current.date(byAdding: .year, value: 1, to: day) else { return [] }
+        let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: selected)
+        return eventStore.events(matching: predicate)
+            .filter { event in
+                [event.title, event.location, event.notes].contains { $0?.localizedStandardContains(keyword) == true }
+            }
+            .sorted { $0.startDate < $1.startDate }
     }
 
     // MARK: - 加载
@@ -191,6 +277,7 @@ final class CalendarStore {
     }
 
     private func reloadEvents() {
+        defer { revision &+= 1 }
         guard hasAccess, !calendars.isEmpty else {
             dayEventsAllCalendars = []
             todayCountSelected = 0

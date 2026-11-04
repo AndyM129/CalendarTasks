@@ -4,13 +4,19 @@ struct ContentView: View {
     @Environment(CalendarStore.self) private var store
 
     var body: some View {
+        @Bindable var store = store
         if store.hasAccess {
             NavigationSplitView {
                 SidebarView()
                     .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
             } detail: {
-                DayListView()
+                if store.searchText.isEmpty {
+                    DayListView()
+                } else {
+                    SearchResultsView()
+                }
             }
+            .searchable(text: $store.searchText, placement: .toolbar, prompt: "搜索")
             .toolbar(removing: .title)
             .toolbar { DateNavigationToolbar() }
         } else {
@@ -38,6 +44,12 @@ private struct DateNavigationToolbar: ToolbarContent {
             DatePicker("日期", selection: dayBinding, displayedComponents: .date)
                 .labelsHidden()
                 .datePickerStyle(.compact)
+            Button("新增日程", systemImage: "plus") {
+                store.searchText = ""
+                store.isAddingEvent = true
+            }
+            .keyboardShortcut("n", modifiers: .command)
+            .disabled(store.calendarForNewEvents == nil)
         }
     }
 
