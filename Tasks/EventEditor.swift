@@ -31,7 +31,7 @@ struct EventEditor: View {
     var body: some View {
         Form {
             // 多行输入：回车换行，随内容自适应高度，超过上限后在框内滚动；打开时光标在标题末尾，不全选
-            LabeledContent("标题") {
+            TextRow(label: "标题") {
                 GrowingTextView(text: $title, placeholder: "标题", maxLines: 5, focusOnAppear: true)
                     .placeholderOverlay()
             }
@@ -57,11 +57,11 @@ struct EventEditor: View {
                     }
                 }
             }
-            LabeledContent("地点") {
+            TextRow(label: "地点") {
                 GrowingTextView(text: $location, placeholder: "地点", maxLines: 3)
                     .placeholderOverlay()
             }
-            LabeledContent("备注") {
+            TextRow(label: "备注") {
                 GrowingTextView(text: $notes, placeholder: "备注", maxLines: 8)
                     .placeholderOverlay()
             }
@@ -105,5 +105,20 @@ struct EventEditor: View {
         event.location = location.isEmpty ? nil : location
         event.notes = notes.isEmpty ? nil : notes
         if store.save(event, span: span) { dismiss() }
+    }
+}
+
+/// 表单里的多行文本行：左侧标签与输入框首行顶端对齐，输入框占满剩余宽度、文字左对齐。
+/// LabeledContent 遇到可伸缩的自定义视图会把它挤到标签下一行，所以自己排
+private struct TextRow<Field: View>: View {
+    let label: String
+    @ViewBuilder let field: Field
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(label)
+            field
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
