@@ -2,13 +2,13 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(CalendarStore.self) private var store
-    /// 启动时总是展开边栏
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// 冷启动时还原上次的边栏显示状态
+    @AppStorage("sidebarVisible") private var sidebarVisible = true
 
     var body: some View {
         @Bindable var store = store
         if store.hasAccess {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
+            NavigationSplitView(columnVisibility: columnVisibility) {
                 SidebarView()
                     .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
             } detail: {
@@ -24,6 +24,13 @@ struct ContentView: View {
         } else {
             AccessRequestView()
         }
+    }
+
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { sidebarVisible ? .all : .detailOnly },
+            set: { sidebarVisible = $0 != .detailOnly }
+        )
     }
 }
 
