@@ -125,11 +125,10 @@ struct DayListView: View {
     }
 }
 
-/// 列表末尾的输入行：回车新增，Esc 或失焦取消
+/// 列表末尾的输入行：回车新增，⌥↩ 换行，Esc 取消，失焦时有内容就新增
 private struct NewEventRow: View {
     @Environment(CalendarStore.self) private var store
     @State private var title = ""
-    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -137,22 +136,17 @@ private struct NewEventRow: View {
                 .font(.title3)
                 .opacity(0.3)
                 .frame(width: 24, height: 24)
-            // 长标题自适应换行，最多 4 行；回车提交
-            TextField("新日程", text: $title, axis: .vertical)
-                .lineLimit(1...4)
-                .textFieldStyle(.plain)
-                .focused($focused)
-                .onSubmit(submit)
-                .onExitCommand {
-                    title = ""
-                    store.isAddingEvent = false
-                }
+            // 长标题自适应换行，最多 4 行
+            GrowingTextView(text: $title, placeholder: "新日程", maxLines: 4, focusOnAppear: true,
+                            returnSubmits: submit,
+                            onCancel: {
+                                title = ""
+                                store.isAddingEvent = false
+                            },
+                            onEndEditing: submit)
+                .placeholderOverlay()
         }
         .padding(.vertical, 4)
-        .onAppear { focused = true }
-        .onChange(of: focused) { _, isFocused in
-            if !isFocused { submit() }
-        }
     }
 
     private func submit() {

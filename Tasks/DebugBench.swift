@@ -21,6 +21,28 @@ enum DebugBench {
     }
 
     static func runIfRequested() {
+        if UserDefaults.standard.string(forKey: "debugBench") == "newline" {
+            // 配合 -debugEditFirst：编辑浮层打开后向焦点输入框投递回车，报告前后文字与选中范围（只改草稿，不存储）
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(6))
+                guard let window = NSApp.keyWindow, let textView = window.firstResponder as? NSTextView,
+                      let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                                   timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                   characters: "\r", charactersIgnoringModifiers: "\r",
+                                                   isARepeat: false, keyCode: 36) else {
+                    try? "no text view focused\n".write(to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"),
+                                                         atomically: true, encoding: .utf8)
+                    return
+                }
+                let before = "selection=\(textView.selectedRange()) length=\((textView.string as NSString).length)"
+                NSApp.postEvent(event, atStart: false)
+                try? await Task.sleep(for: .seconds(1))
+                let after = "newlines=\(textView.string.filter(\.isNewline).count) length=\((textView.string as NSString).length) popoverOpen=\(textView.window != nil)"
+                try? "\(before)\n\(after)\n".write(to: FileManager.default.temporaryDirectory.appending(path: "bench.txt"),
+                                                   atomically: true, encoding: .utf8)
+            }
+            return
+        }
         if UserDefaults.standard.string(forKey: "debugBench") == "highlight" {
             // 启动 6 秒后报告各表格的选中高亮样式与选中行，屏幕锁定时也能验证
             Task { @MainActor in

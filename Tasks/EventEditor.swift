@@ -30,10 +30,11 @@ struct EventEditor: View {
 
     var body: some View {
         Form {
-            // 多行输入：随内容自适应高度，超过上限后在框内滚动
-            TextField("标题", text: $title, axis: .vertical)
-                .lineLimit(1...5)
-                .multilineTextAlignment(.leading)
+            // 多行输入：回车换行，随内容自适应高度，超过上限后在框内滚动；打开时光标在标题末尾，不全选
+            LabeledContent("标题") {
+                GrowingTextView(text: $title, placeholder: "标题", maxLines: 5, focusOnAppear: true)
+                    .placeholderOverlay()
+            }
             Toggle("全天", isOn: $isAllDay.animation(.ui))
                 .onChange(of: isAllDay) { _, allDay in
                     // 由全天改为定时且开始在 0 点时，默认当日 9:00–10:00
@@ -56,24 +57,31 @@ struct EventEditor: View {
                     }
                 }
             }
-            TextField("地点", text: $location, axis: .vertical)
-                .lineLimit(1...3)
-                .multilineTextAlignment(.leading)
-            TextField("备注", text: $notes, axis: .vertical)
-                .lineLimit(1...8)
-                .multilineTextAlignment(.leading)
+            LabeledContent("地点") {
+                GrowingTextView(text: $location, placeholder: "地点", maxLines: 3)
+                    .placeholderOverlay()
+            }
+            LabeledContent("备注") {
+                GrowingTextView(text: $notes, placeholder: "备注", maxLines: 8)
+                    .placeholderOverlay()
+            }
         }
         .formStyle(.grouped)
         .frame(width: 360)
         .safeAreaInset(edge: .bottom) {
             HStack {
+                Text("⌘↩ 存储")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                 Spacer()
                 Button("取消", role: .cancel, action: dismiss)
                     .keyboardShortcut(.cancelAction)
+                // 回车留给输入框换行，存储用 ⌘↩
                 Button("存储") {
                     if event.hasRecurrenceRules { askingSpan = true } else { commit(span: .thisEvent) }
                 }
-                .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
                 .disabled(end < start)
             }
             .padding([.horizontal, .bottom], 16)
