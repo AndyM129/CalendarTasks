@@ -7,6 +7,8 @@ struct DayListView: View {
     @Environment(\.undoManager) private var undoManager
     @State private var selection: EKEvent?
     @State private var pendingDelete: EKEvent?
+    @AppStorage("allDayExpanded") private var allDayExpanded = true
+    @AppStorage("timedExpanded") private var timedExpanded = true
 
     var body: some View {
         @Bindable var store = store
@@ -17,12 +19,12 @@ struct DayListView: View {
                 DayHeader()
             }
             if !store.allDayEvents.isEmpty {
-                Section("全天") {
+                CollapsibleSection(title: "全天", count: store.allDayEvents.count, isExpanded: $allDayExpanded) {
                     ForEach(store.allDayEvents, id: \.self, content: row)
                 }
             }
             if !store.timedEvents.isEmpty {
-                Section("日程") {
+                CollapsibleSection(title: "日程", count: store.timedEvents.count, isExpanded: $timedExpanded) {
                     ForEach(store.timedEvents, id: \.self, content: row)
                 }
             }
@@ -122,6 +124,42 @@ private struct NewEventRow: View {
         if !text.isEmpty { store.createEvent(title: text) }
         title = ""
         store.isAddingEvent = false
+    }
+}
+
+/// 仿提醒事项的分组：粗体标题 + 右侧折叠箭头，折叠时显示条数
+private struct CollapsibleSection<Content: View>: View {
+    let title: String
+    let count: Int
+    @Binding var isExpanded: Bool
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Section {
+            if isExpanded { content }
+        } header: {
+            Button {
+                withAnimation(.snappy) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    Text(title)
+                        .font(.title3.bold())
+                        .foregroundStyle(.primary)
+                    if !isExpanded {
+                        Text(count, format: .number)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                        .foregroundStyle(.secondary)
+                }
+                .textCase(nil)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
