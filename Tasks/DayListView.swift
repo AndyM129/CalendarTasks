@@ -43,6 +43,8 @@ struct DayListView: View {
                     .onTapGesture { withAnimation(.ui) { store.isAddingEvent = true } }
             }
             .padding(.vertical, 8)
+            // 换日期时列表直接换成新内容，不做增删过渡（整列表替换的过渡效果不好）；大标题的逐字动画不受影响
+            .transaction(value: store.day) { $0.animation = nil }
         }
         // 可获得焦点，Delete 键和 ↑↓ 选择才能生效；不画系统焦点框
         .focusable()
@@ -62,6 +64,14 @@ struct DayListView: View {
         }
         // 验证用：-debugBench collapse，4 秒后收起「全天」、再展开，记录「日程」分组标题的位置变化
         .task {
+            if UserDefaults.standard.string(forKey: "debugBench") == "daychange" {
+                // 用 3 秒的慢动画换到后一天，外部在中途截屏：列表应已是新内容，只有标题在过渡
+                try? await Task.sleep(for: .seconds(4))
+                try? "start\n".write(to: FileManager.default.temporaryDirectory.appending(path: "collapse-start"),
+                                     atomically: true, encoding: .utf8)
+                withAnimation(.linear(duration: 3)) { store.shiftDay(by: 1) }
+                return
+            }
             guard UserDefaults.standard.string(forKey: "debugBench") == "collapse" else { return }
             try? await Task.sleep(for: .seconds(4))
             DebugBench.samples.removeAll()
