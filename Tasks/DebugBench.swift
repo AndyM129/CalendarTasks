@@ -141,3 +141,23 @@ enum DebugBench {
     }
 }
 #endif
+
+#if DEBUG
+import SwiftUI
+
+/// 动画进度探针：动画期间 SwiftUI 每帧用插值后的 value 计算 body，记录下来即可得到真实的动画时长与曲线
+struct AnimationProbe: View, Animatable {
+    var value: Double
+    let tag: String
+
+    var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
+
+    var body: some View {
+        DebugBench.record(tag, value)
+        return Color.clear.frame(width: 0, height: 0)
+    }
+}
+#endif

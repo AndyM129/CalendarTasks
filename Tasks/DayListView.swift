@@ -78,8 +78,8 @@ struct DayListView: View {
             // 动画放慢到 3 秒并写标记文件，外部在动画中途截屏，看有没有中间态
             try? "start\n".write(to: FileManager.default.temporaryDirectory.appending(path: "collapse-start"),
                                   atomically: true, encoding: .utf8)
-            withAnimation(.linear(duration: 3)) { allDayExpanded = false }
-            try? await Task.sleep(for: .seconds(4))
+            withAnimation(.ui) { allDayExpanded = false }
+            try? await Task.sleep(for: .seconds(1))
             withAnimation(.ui) { allDayExpanded = true }
             try? await Task.sleep(for: .seconds(1))
             DebugBench.writeSamples()
@@ -246,6 +246,9 @@ private struct CollapsibleSection<Content: View>: View {
             }
             #endif
             Divider().padding(.horizontal, 20)
+                #if DEBUG
+                .background(AnimationProbe(value: isExpanded ? 1 : 0, tag: title))
+                #endif
             // 收起时内容整体移除，下面的分组随高度变化滑上来；内容单独裁切，上移时不会盖到分组标题
             VStack(spacing: 0) {
                 if isExpanded {
