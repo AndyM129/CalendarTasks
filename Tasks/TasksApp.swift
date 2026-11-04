@@ -8,7 +8,7 @@ struct TasksApp: App {
         WindowGroup {
             ContentView()
                 .environment(store)
-                .frame(minWidth: 720, minHeight: 480)
+                .frame(minWidth: 280, minHeight: 320)
         }
         .defaultSize(width: 980, height: 720)
 

@@ -1,22 +1,36 @@
 import SwiftUI
 
 struct ContentView: View {
+    /// 窗口窄于此宽度时自动收起边栏，略大于两栏最小宽度之和（220 + 260），保证收起发生在窗口被两栏卡住之前
+    private static let autoCollapseWidth: CGFloat = 500
+
     @Environment(CalendarStore.self) private var store
-    /// 冷启动时还原上次的边栏显示状态
+    /// 冷启动时还原上次的边栏显示状态（用户手动开关的结果，不受自动收起影响）
     @AppStorage("sidebarVisible") private var sidebarVisible = true
+    /// 窗口变窄导致的临时收起；窗口变宽后恢复
+    @State private var autoCollapsed = false
 
     var body: some View {
         @Bindable var store = store
         if store.hasAccess {
             NavigationSplitView(columnVisibility: columnVisibility) {
                 SidebarView()
-                    .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
             } detail: {
-                if store.searchText.isEmpty {
-                    DayListView()
-                } else {
-                    SearchResultsView()
+                Group {
+                    if store.searchText.isEmpty {
+                        DayListView()
+                            .transition(.opacity)
+                    } else {
+                        SearchResultsView()
+                            .transition(.opacity)
+                    }
                 }
+                .animation(.snappy, value: store.searchText.isEmpty)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 640)
+            }
+            .onGeometryChange(for: Bool.self) { $0.size.width < Self.autoCollapseWidth } action: { narrow in
+                withAnimation(.snappy) { autoCollapsed = narrow }
             }
             .searchable(text: $store.searchText, placement: .toolbar, prompt: "搜索")
             .toolbar(removing: .title)
@@ -28,8 +42,17 @@ struct ContentView: View {
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
-            get: { sidebarVisible ? .all : .detailOnly },
-            set: { sidebarVisible = $0 != .detailOnly }
+            get: { sidebarVisible && !autoCollapsed ? .all : .detailOnly },
+            set: { visibility in
+                let show = visibility != .detailOnly
+                // 已因窗口窄而收起时，系统再报的收起不记成用户偏好
+                if !show && autoCollapsed { return }
+                withAnimation(.snappy) {
+                    // 窄窗口下手动展开时取消自动收起，系统会把窗口撑宽到放得下两栏
+                    if show { autoCollapsed = false }
+                    sidebarVisible = show
+                }
+            }
         )
     }
 }
@@ -43,12 +66,12 @@ private struct DateNavigationToolbar: ToolbarContent {
         @Bindable var store = store
         ToolbarItemGroup(placement: .primaryAction) {
             ControlGroup {
-                Button("前一天", systemImage: "chevron.left") { store.shiftDay(by: -1) }
+                Button("前一天", systemImage: "chevron.left") { withAnimation(.snappy) { store.shiftDay(by: -1) } }
                     .keyboardShortcut(.leftArrow, modifiers: .command)
-                Button("今天") { store.goToday() }
+                Button("今天") { withAnimation(.snappy) { store.goToday() } }
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(store.isToday)
-                Button("后一天", systemImage: "chevron.right") { store.shiftDay(by: 1) }
+                Button("后一天", systemImage: "chevron.right") { withAnimation(.snappy) { store.shiftDay(by: 1) } }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
             }
         }
@@ -73,7 +96,7 @@ private struct DateNavigationToolbar: ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button("新增日程", systemImage: "plus") {
                 store.searchText = ""
-                store.isAddingEvent = true
+                withAnimation(.snappy) { store.isAddingEvent = true }
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(store.calendarForNewEvents == nil)
@@ -84,8 +107,8 @@ private struct DateNavigationToolbar: ToolbarContent {
     private var dayBinding: Binding<Date> {
         Binding(
             get: { store.day },
-            set: {
-                store.day = Calendar.current.startOfDay(for: $0)
+            set: { date in
+                withAnimation(.snappy) { store.day = Calendar.current.startOfDay(for: date) }
                 pickingDate = false
             }
         )

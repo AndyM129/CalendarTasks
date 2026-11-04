@@ -77,6 +77,8 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .animation(.snappy, value: store.revision)
+        .animation(.snappy, value: store.groups)
         .sheet(item: $editingGroup) { group in
             CalendarGroupEditor(group: group)
         }

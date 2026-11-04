@@ -42,6 +42,9 @@ struct DayListView: View {
             }
         }
         .listStyle(.inset)
+        // 换日期、新增、删除、改状态等都会触发重新加载，列表随之做过渡动画
+        .animation(.snappy, value: store.revision)
+        .animation(.snappy, value: store.isAddingEvent)
         .onDeleteCommand {
             if let selection, selection.calendar.allowsContentModifications { pendingDelete = selection }
         }
@@ -169,10 +172,14 @@ private struct DayHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
+                // 窗口窄时先缩小字号，再省略
                 Text(store.day, format: .dateTime.month().day().weekday(.wide))
                     .font(.largeTitle.bold())
                     .foregroundStyle(Color.accentColor)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .contentTransition(.numericText())
+                Spacer(minLength: 8)
                 Text(store.events.count, format: .number)
                     .font(.largeTitle)
                     .foregroundStyle(Color.accentColor)
