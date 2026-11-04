@@ -9,8 +9,11 @@ struct DayListView: View {
     @State private var pendingDelete: EKEvent?
     /// 正在编辑（浮层打开）的日程
     @State private var editingEvent: EKEvent?
-    @AppStorage("allDayExpanded") private var allDayExpanded = true
-    @AppStorage("timedExpanded") private var timedExpanded = true
+    // 折叠状态用 @State 驱动界面、再写回 UserDefaults：直接绑 @AppStorage 时更新不在 withAnimation 事务里，折叠没有动画
+    @AppStorage("allDayExpanded") private var savedAllDayExpanded = true
+    @AppStorage("timedExpanded") private var savedTimedExpanded = true
+    @State private var allDayExpanded = UserDefaults.standard.object(forKey: "allDayExpanded") as? Bool ?? true
+    @State private var timedExpanded = UserDefaults.standard.object(forKey: "timedExpanded") as? Bool ?? true
 
     var body: some View {
         @Bindable var store = store
@@ -39,6 +42,8 @@ struct DayListView: View {
             }
         }
         .listStyle(.inset)
+        .onChange(of: allDayExpanded) { _, expanded in savedAllDayExpanded = expanded }
+        .onChange(of: timedExpanded) { _, expanded in savedTimedExpanded = expanded }
         #if DEBUG
         // 验证用：启动参数 -debugSelectFirst YES 选中第一条日程；-debugEditFirst YES 再打开它的编辑浮层
         .task {
@@ -341,9 +346,9 @@ struct EventRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        // 双击行（List 的 primaryAction）打开编辑浮层，挂在整行上
-        .popover(isPresented: isEditing, arrowEdge: .trailing) {
-            EventEditor(event: event) { isEditing.wrappedValue = false }
+        // 双击行（List 的 primaryAction）打开编辑浮层，挂在整行上；按住浮层往外拖可变成独立窗口
+        .detachablePopover(isPresented: isEditing, store: store) { close in
+            EventEditor(event: event, dismiss: close)
         }
         .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingTitle != nil },
                                                              set: { if !$0 { pendingTitle = nil } })) {

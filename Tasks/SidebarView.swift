@@ -7,7 +7,9 @@ struct SidebarView: View {
     @State private var editingGroup: CalendarGroup?
     @State private var deletingGroup: CalendarGroup?
     /// 已收起的账户，换行分隔存 UserDefaults
-    @AppStorage("collapsedSources") private var collapsedSourcesText = ""
+    @AppStorage("collapsedSources") private var savedCollapsedSources = ""
+    /// 同 DayListView：用 @State 驱动界面，折叠才有动画
+    @State private var collapsedSourcesText = UserDefaults.standard.string(forKey: "collapsedSources") ?? ""
     /// 分区标题右侧图标与下方行内计数右对齐所需的内缩
     private static let headerTrailingInset: CGFloat = 10
 
@@ -77,6 +79,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .onChange(of: collapsedSourcesText) { _, text in savedCollapsedSources = text }
         .animation(.ui, value: store.revision)
         .animation(.ui, value: store.groups)
         .sheet(item: $editingGroup) { group in

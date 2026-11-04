@@ -114,14 +114,14 @@ struct EventEditor: View {
 
     private var footer: some View {
         HStack {
-            Text("⌘↩ 存储")
+            Text("⌘↩ 保存")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
             Spacer()
             Button("取消", role: .cancel, action: dismiss)
                 .keyboardShortcut(.cancelAction)
-            // 回车留给输入框换行，存储用 ⌘↩
-            Button("存储") {
+            // 回车留给输入框换行，保存用 ⌘↩
+            Button("保存") {
                 if event.hasRecurrenceRules { askingSpan = true } else { commit(span: .thisEvent) }
             }
             .keyboardShortcut(.return, modifiers: .command)
@@ -231,7 +231,8 @@ struct EventEditor: View {
     // MARK: - 存储
 
     private func commit(span: EKSpan) {
-        event.title = title
+        // 去掉首尾空白（含换行）
+        event.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         event.isAllDay = isAllDay
         event.startDate = start
         event.endDate = end
