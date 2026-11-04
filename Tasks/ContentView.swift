@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var autoCollapsed = false
     /// 自动收起时点边栏按钮，边栏浮在列表上方，用于临时切换日历
     @State private var floatingSidebar = false
+    @State private var keyMonitor: Any?
 
     var body: some View {
         @Bindable var store = store
@@ -28,7 +29,7 @@ struct ContentView: View {
                             .transition(.opacity)
                     }
                 }
-                .animation(.snappy, value: store.searchText.isEmpty)
+                .animation(.ui, value: store.searchText.isEmpty)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 640)
             }
             .overlay { floatingSidebarOverlay }
@@ -40,14 +41,14 @@ struct ContentView: View {
                 for _ in 0..<30 where !autoCollapsed {
                     try? await Task.sleep(for: .milliseconds(500))
                 }
-                if autoCollapsed { withAnimation(.snappy) { floatingSidebar = true } }
+                if autoCollapsed { withAnimation(.ui) { floatingSidebar = true } }
             }
             #endif
             // 启动时也要取一次宽度（onGeometryChange 不报初始值）
             .background {
                 GeometryReader { proxy in
                     Color.clear.onChange(of: proxy.size.width < Self.autoCollapseWidth, initial: true) { _, narrow in
-                        withAnimation(.snappy) {
+                        withAnimation(.ui) {
                             autoCollapsed = narrow
                             // 窗口变宽后改回常规两栏，不再浮动
                             if !narrow { floatingSidebar = false }
@@ -58,6 +59,13 @@ struct ContentView: View {
             .searchable(text: $store.searchText, placement: .toolbar, prompt: "搜索")
             .toolbar(removing: .title)
             .toolbar { DateNavigationToolbar() }
+            .onAppear {
+                keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: handleDateShortcut)
+            }
+            .onDisappear {
+                if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+                keyMonitor = nil
+            }
         } else {
             AccessRequestView()
         }
@@ -68,7 +76,7 @@ struct ContentView: View {
             get: { sidebarVisible && !autoCollapsed ? .all : .detailOnly },
             set: { visibility in
                 let show = visibility != .detailOnly
-                withAnimation(.snappy) {
+                withAnimation(.ui) {
                     if autoCollapsed {
                         // 窄窗口下边栏按钮只开关浮动边栏，不改两栏布局和用户偏好
                         if show { floatingSidebar.toggle() }
@@ -80,10 +88,11 @@ struct ContentView: View {
         )
     }
 
-    /// 浮动边栏：全窗口蒙层 + 左侧边栏，点蒙层或按 Esc 收起
-    @ViewBuilder private var floatingSidebarOverlay: some View {
-        if floatingSidebar {
-            ZStack(alignment: .leading) {
+    /// 浮动边栏：全窗口蒙层 + 左侧边栏，点蒙层或按 Esc 收起。
+    /// 外层 ZStack 常驻，蒙层和边栏各自插入、移除，各自的过渡（渐变 / 左侧滑入滑出）才会生效
+    private var floatingSidebarOverlay: some View {
+        ZStack(alignment: .leading) {
+            if floatingSidebar {
                 Color.black.opacity(0.3)
                     .contentShape(Rectangle())
                     .onTapGesture { closeFloatingSidebar() }
@@ -97,14 +106,32 @@ struct ContentView: View {
                     .clipShape(.rect(cornerRadius: 12))
                     .shadow(radius: 12)
                     .padding(8)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .transition(.move(edge: .leading))
+                    .onExitCommand { closeFloatingSidebar() }
             }
-            .onExitCommand { closeFloatingSidebar() }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .allowsHitTesting(floatingSidebar)
     }
 
     private func closeFloatingSidebar() {
-        withAnimation(.snappy) { floatingSidebar = false }
+        withAnimation(.ui) { floatingSidebar = false }
+    }
+
+    /// 切换日期的快捷键 ⌘← / ⌘→ / ⌘T。正在编辑文字或在弹窗里时放行，
+    /// 留给文本框做移到行首/行尾、选中等操作，避免误切日期
+    private func handleDateShortcut(_ event: NSEvent) -> NSEvent? {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+              let window = event.window, window.sheetParent == nil,
+              !(window.firstResponder is NSText) else { return event }
+        switch event.keyCode {
+        case 123: withAnimation(.ui) { store.shiftDay(by: -1) }
+        case 124: withAnimation(.ui) { store.shiftDay(by: 1) }
+        default:
+            guard event.charactersIgnoringModifiers == "t", !store.isToday else { return event }
+            withAnimation(.ui) { store.goToday() }
+        }
+        return nil
     }
 }
 
@@ -117,13 +144,13 @@ private struct DateNavigationToolbar: ToolbarContent {
         @Bindable var store = store
         ToolbarItemGroup(placement: .primaryAction) {
             ControlGroup {
-                Button("前一天", systemImage: "chevron.left") { withAnimation(.snappy) { store.shiftDay(by: -1) } }
-                    .keyboardShortcut(.leftArrow, modifiers: .command)
-                Button("今天") { withAnimation(.snappy) { store.goToday() } }
-                    .keyboardShortcut("t", modifiers: .command)
+                Button("前一天", systemImage: "chevron.left") { withAnimation(.ui) { store.shiftDay(by: -1) } }
+                    .help("前一天（⌘←）")
+                Button("今天") { withAnimation(.ui) { store.goToday() } }
+                    .help("今天（⌘T）")
                     .disabled(store.isToday)
-                Button("后一天", systemImage: "chevron.right") { withAnimation(.snappy) { store.shiftDay(by: 1) } }
-                    .keyboardShortcut(.rightArrow, modifiers: .command)
+                Button("后一天", systemImage: "chevron.right") { withAnimation(.ui) { store.shiftDay(by: 1) } }
+                    .help("后一天（⌘→）")
             }
         }
         // 日期文字无背景，点击弹出日历选择
@@ -147,7 +174,7 @@ private struct DateNavigationToolbar: ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button("新增日程", systemImage: "plus") {
                 store.searchText = ""
-                withAnimation(.snappy) { store.isAddingEvent = true }
+                withAnimation(.ui) { store.isAddingEvent = true }
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(store.calendarForNewEvents == nil)
@@ -159,7 +186,7 @@ private struct DateNavigationToolbar: ToolbarContent {
         Binding(
             get: { store.day },
             set: { date in
-                withAnimation(.snappy) { store.day = Calendar.current.startOfDay(for: date) }
+                withAnimation(.ui) { store.day = Calendar.current.startOfDay(for: date) }
                 pickingDate = false
             }
         )

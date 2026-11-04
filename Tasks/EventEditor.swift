@@ -31,7 +31,7 @@ struct EventEditor: View {
     var body: some View {
         Form {
             TextField("标题", text: $title)
-            Toggle("全天", isOn: $isAllDay.animation())
+            Toggle("全天", isOn: $isAllDay.animation(.ui))
                 .onChange(of: isAllDay) { _, allDay in
                     // 由全天改为定时且开始在 0 点时，默认当日 9:00–10:00
                     let day = Calendar.current.startOfDay(for: start)

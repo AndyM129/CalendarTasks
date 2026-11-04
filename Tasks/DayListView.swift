@@ -43,8 +43,8 @@ struct DayListView: View {
         }
         .listStyle(.inset)
         // 换日期、新增、删除、改状态等都会触发重新加载，列表随之做过渡动画
-        .animation(.snappy, value: store.revision)
-        .animation(.snappy, value: store.isAddingEvent)
+        .animation(.ui, value: store.revision)
+        .animation(.ui, value: store.isAddingEvent)
         .onDeleteCommand {
             if let selection, selection.calendar.allowsContentModifications { pendingDelete = selection }
         }
@@ -142,7 +142,7 @@ private struct CollapsibleSection<Content: View>: View {
             if isExpanded { content }
         } header: {
             Button {
-                withAnimation(.snappy) { isExpanded.toggle() }
+                withAnimation(.ui) { isExpanded.toggle() }
             } label: {
                 HStack {
                     Text(title)
@@ -172,13 +172,14 @@ private struct DayHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                // 窗口窄时先缩小字号，再省略
-                Text(store.day, format: .dateTime.month().day().weekday(.wide))
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(Color.accentColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .contentTransition(.numericText())
+                // 窗口窄时依次换小一号字体
+                ViewThatFits(in: .horizontal) {
+                    ForEach([Font.largeTitle, .title, .title2, .title3], id: \.self) { font in
+                        PerCharacterText(text: dayTitle)
+                            .font(font.bold())
+                    }
+                }
+                .foregroundStyle(Color.accentColor)
                 Spacer(minLength: 8)
                 Text(store.events.count, format: .number)
                     .font(.largeTitle)
@@ -193,9 +194,30 @@ private struct DayHeader: View {
         .padding(.vertical, 8)
     }
 
+    private var dayTitle: String {
+        store.day.formatted(.dateTime.month().day().weekday(.wide))
+    }
+
     private var subtitle: String {
         let year = store.day.formatted(.dateTime.year())
         return store.isToday ? "\(year) · 今天" : year
+    }
+}
+
+/// 逐字拆开的文字：换日期时只有变了的字做过渡（如「4日 星期三」→「5日 星期四」只动「4」「三」）
+private struct PerCharacterText: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(text.enumerated()), id: \.offset) { _, character in
+                Text(String(character))
+                    .contentTransition(.numericText())
+            }
+        }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
 }
 

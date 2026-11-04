@@ -17,3 +17,8 @@ struct TasksApp: App {
         }
     }
 }
+
+extension Animation {
+    /// 全局统一的界面过渡：0.3 秒缓入缓出曲线
+    static let ui = Animation.easeInOut(duration: 0.3)
+}

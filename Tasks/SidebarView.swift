@@ -60,7 +60,7 @@ struct SidebarView: View {
                     }
                 } header: {
                     Button {
-                        withAnimation(.snappy) { toggleSource(group.source) }
+                        withAnimation(.ui) { toggleSource(group.source) }
                     } label: {
                         HStack {
                             Text(group.source)
@@ -77,8 +77,8 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .animation(.snappy, value: store.revision)
-        .animation(.snappy, value: store.groups)
+        .animation(.ui, value: store.revision)
+        .animation(.ui, value: store.groups)
         .sheet(item: $editingGroup) { group in
             CalendarGroupEditor(group: group)
         }
