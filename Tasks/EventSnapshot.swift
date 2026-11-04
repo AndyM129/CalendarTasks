@@ -12,8 +12,10 @@ struct EventSnapshot {
     let notes: String?
     let url: URL?
     let alarms: [EKAlarm]
+    /// 只在删除「将来所有」时保留，撤销时从这次开始重建系列
+    let recurrenceRules: [EKRecurrenceRule]
 
-    init(_ event: EKEvent) {
+    init(_ event: EKEvent, keepsRecurrence: Bool) {
         title = event.title
         startDate = event.startDate
         endDate = event.endDate
@@ -24,6 +26,9 @@ struct EventSnapshot {
         notes = event.notes
         url = event.url
         alarms = (event.alarms ?? []).compactMap { $0.copy() as? EKAlarm }
+        recurrenceRules = keepsRecurrence
+            ? (event.recurrenceRules ?? []).compactMap { $0.copy() as? EKRecurrenceRule }
+            : []
     }
 
     func makeEvent(in store: EKEventStore) -> EKEvent {
@@ -38,6 +43,9 @@ struct EventSnapshot {
         event.notes = notes
         event.url = url
         event.alarms = alarms.compactMap { $0.copy() as? EKAlarm }
+        if !recurrenceRules.isEmpty {
+            event.recurrenceRules = recurrenceRules.compactMap { $0.copy() as? EKRecurrenceRule }
+        }
         return event
     }
 }

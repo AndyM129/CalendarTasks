@@ -216,10 +216,11 @@ final class CalendarStore {
 
     // MARK: - 删除与撤销
 
-    /// 删除日程。非重复日程可用 ⌘Z 撤销（按快照重建）；重复日程删除后不可撤销
+    /// 删除日程，可用 ⌘Z 撤销：按删除前快照重建。
+    /// 重复日程「仅此次」恢复为独立的单次日程；「将来所有」从这次开始按原规则重建系列
     func delete(_ event: EKEvent, span: EKSpan, undoManager: UndoManager?) {
-        let snapshot = EventSnapshot(event)
-        let undoable = !event.hasRecurrenceRules
+        let keepsRecurrence = event.hasRecurrenceRules && span == .futureEvents
+        let snapshot = EventSnapshot(event, keepsRecurrence: keepsRecurrence)
         do {
             try eventStore.remove(event, span: span, commit: true)
         } catch {
@@ -228,7 +229,7 @@ final class CalendarStore {
             return
         }
         reloadEvents()
-        guard undoable, let undoManager else { return }
+        guard let undoManager else { return }
         undoManager.registerUndo(withTarget: self) { store in
             store.restore(snapshot, undoManager: undoManager)
         }
@@ -237,9 +238,10 @@ final class CalendarStore {
 
     private func restore(_ snapshot: EventSnapshot, undoManager: UndoManager) {
         let event = snapshot.makeEvent(in: eventStore)
-        guard save(event, span: .thisEvent) else { return }
+        let span: EKSpan = event.hasRecurrenceRules ? .futureEvents : .thisEvent
+        guard save(event, span: span) else { return }
         undoManager.registerUndo(withTarget: self) { store in
-            store.delete(event, span: .thisEvent, undoManager: undoManager)
+            store.delete(event, span: span, undoManager: undoManager)
         }
         undoManager.setActionName("删除日程")
     }

@@ -61,7 +61,9 @@ struct DayListView: View {
                 Button("删除", role: .destructive) { delete(event, span: .thisEvent) }
             }
         } message: { event in
-            Text(event.hasRecurrenceRules ? "这是重复日程，删除后无法撤销。" : "可以用 ⌘Z 撤销。")
+            Text(event.hasRecurrenceRules
+                 ? "可以用 ⌘Z 撤销：「仅此次」恢复为单次日程，「将来所有」从这次起按原规则重建。"
+                 : "可以用 ⌘Z 撤销。")
         }
         .alert("无法保存日程", isPresented: Binding(get: { store.lastError != nil },
                                                 set: { if !$0 { store.lastError = nil } })) {
