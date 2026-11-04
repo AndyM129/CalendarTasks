@@ -40,11 +40,12 @@ struct DayListView: View {
         }
         .listStyle(.inset)
         #if DEBUG
-        // 验证用：启动参数 -debugSelectFirst YES 选中第一条日程
+        // 验证用：启动参数 -debugSelectFirst YES 选中第一条日程；-debugEditFirst YES 再打开它的编辑浮层
         .task {
             guard UserDefaults.standard.bool(forKey: "debugSelectFirst") else { return }
             try? await Task.sleep(for: .seconds(3))
             selection = store.allDayEvents.first ?? store.timedEvents.first
+            if UserDefaults.standard.bool(forKey: "debugEditFirst") { editingEvent = selection }
         }
         #endif
         // 大标题固定在列表上方：放在 List 的分区标题里时，点标题弹出的月历浮层显示不出来
@@ -136,7 +137,9 @@ private struct NewEventRow: View {
                 .font(.title3)
                 .opacity(0.3)
                 .frame(width: 24, height: 24)
-            TextField("新日程", text: $title)
+            // 长标题自适应换行，最多 4 行；回车提交
+            TextField("新日程", text: $title, axis: .vertical)
+                .lineLimit(1...4)
                 .textFieldStyle(.plain)
                 .focused($focused)
                 .onSubmit(submit)
@@ -290,6 +293,7 @@ struct EventRow: View {
     @AppStorage(EmojiMarkers.priorityKey) private var priorityText = EmojiMarkers.defaultPriorities
     /// 重复日程待确认范围的新标题
     @State private var pendingTitle: String?
+    @State private var choosingStatus = false
 
     let event: EKEvent
     let title: String
@@ -303,7 +307,7 @@ struct EventRow: View {
         let editable = event.calendar.allowsContentModifications
         HStack(spacing: 10) {
             Button {
-                setStatus(nextStatus(after: marked.status), in: marked)
+                choosingStatus = true
             } label: {
                 Text(marked.status ?? EmojiMarkers.placeholder)
                     .font(.title3)
@@ -312,14 +316,12 @@ struct EventRow: View {
             }
             .buttonStyle(.plain)
             .disabled(!editable)
-            .help(editable ? "单击切换状态，右键选择" : "该日历不可编辑")
-            .contextMenu {
-                ForEach(statuses, id: \.self) { status in
-                    Button(status) { setStatus(status, in: marked) }
-                }
-                if marked.status != nil {
-                    Divider()
-                    Button("清除状态") { setStatus(nil, in: marked) }
+            .help(editable ? "选择状态" : "该日历不可编辑")
+            // 点击弹出气泡，列出设置里配置的状态，点选后写回
+            .popover(isPresented: $choosingStatus, arrowEdge: .bottom) {
+                StatusPicker(statuses: statuses, current: marked.status) { status in
+                    choosingStatus = false
+                    setStatus(status, in: marked)
                 }
             }
             // 标题里的 #标签 挪到副标题行，只影响显示
@@ -361,12 +363,6 @@ struct EventRow: View {
     private var statuses: [String] { EmojiMarkers.items(statusText, fallback: EmojiMarkers.defaultStatuses) }
     private var priorities: [String] { EmojiMarkers.items(priorityText, fallback: EmojiMarkers.defaultPriorities) }
 
-    /// 无状态时取序列第一个，否则循环到下一个
-    private func nextStatus(after status: String?) -> String? {
-        guard let status, let index = statuses.firstIndex(of: status) else { return statuses.first }
-        return statuses[(index + 1) % statuses.count]
-    }
-
     private func setStatus(_ status: String?, in marked: MarkedTitle) {
         var marked = marked
         marked.status = status
@@ -395,5 +391,35 @@ struct EventRow: View {
                 : date.formatted(.dateTime.month().day().hour().minute())
         }
         return "\(style(start)) – \(style(end))"
+    }
+}
+
+/// 状态选择气泡：一排可选的状态 emoji，当前状态带底色；有状态时末尾多一个「清除」
+private struct StatusPicker: View {
+    let statuses: [String]
+    let current: String?
+    let choose: (String?) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(statuses, id: \.self) { status in
+                Button { choose(status) } label: {
+                    Text(status)
+                        .font(.title2)
+                        .frame(width: 34, height: 34)
+                        .background(status == current ? Color.primary.opacity(0.12) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if current != nil {
+                Divider().frame(height: 24)
+                Button("清除") { choose(nil) }
+                    .buttonStyle(.borderless)
+                    .padding(.horizontal, 4)
+            }
+        }
+        .padding(8)
     }
 }

@@ -30,7 +30,10 @@ struct EventEditor: View {
 
     var body: some View {
         Form {
-            TextField("标题", text: $title)
+            // 多行输入：随内容自适应高度，超过上限后在框内滚动
+            TextField("标题", text: $title, axis: .vertical)
+                .lineLimit(1...5)
+                .multilineTextAlignment(.leading)
             Toggle("全天", isOn: $isAllDay.animation(.ui))
                 .onChange(of: isAllDay) { _, allDay in
                     // 由全天改为定时且开始在 0 点时，默认当日 9:00–10:00
@@ -53,9 +56,12 @@ struct EventEditor: View {
                     }
                 }
             }
-            TextField("地点", text: $location)
+            TextField("地点", text: $location, axis: .vertical)
+                .lineLimit(1...3)
+                .multilineTextAlignment(.leading)
             TextField("备注", text: $notes, axis: .vertical)
-                .lineLimit(3...8)
+                .lineLimit(1...8)
+                .multilineTextAlignment(.leading)
         }
         .formStyle(.grouped)
         .frame(width: 360)
