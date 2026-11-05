@@ -1,5 +1,6 @@
 .DS_Store
 build/
+.build/
 DerivedData/
 xcuserdata/
 # 由 project.yml 经 XcodeGen 生成
