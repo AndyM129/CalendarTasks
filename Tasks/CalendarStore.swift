@@ -184,6 +184,8 @@ final class CalendarStore {
         if completesAllDay, event.isAllDay {
             let now = Calendar.current.dateInterval(of: .minute, for: .now)?.start ?? .now
             event.isAllDay = false
+            // 全天日程的 timeZone 为 nil（浮动时间），不补上的话起止会按 UTC 解读，与本机时间差一个时区
+            event.timeZone = .current
             event.startDate = now
             event.endDate = now
         }

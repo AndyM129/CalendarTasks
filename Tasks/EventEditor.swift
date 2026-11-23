@@ -234,6 +234,10 @@ struct EventEditor: View {
         // 去掉首尾空白（含换行）
         event.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         event.isAllDay = isAllDay
+        // 全天改非全天时原 timeZone 为 nil（浮动时间），补上本机时区，否则起止会偏一个时区
+        if !isAllDay, event.timeZone == nil {
+            event.timeZone = .current
+        }
         event.startDate = start
         event.endDate = end
         if let calendar = store.calendars.first(where: { $0.calendarIdentifier == calendarID }) {
