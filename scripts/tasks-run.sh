@@ -43,7 +43,8 @@ if ! xcodebuild -project Tasks.xcodeproj -scheme Tasks -configuration Debug \
 fi
 echo "BUILD SUCCEEDED"
 
-pkill -x Tasks 2>/dev/null && sleep 1 || true
+# 只结束本工程编出的开发版，不影响已安装的正式版（进程名同为 Tasks）
+pkill -f "$PWD/$APP/Contents/MacOS/Tasks" 2>/dev/null && sleep 1 || true
 
 if $refresh_icon; then
     touch "$APP" "$APP/Contents/Info.plist"
