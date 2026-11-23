@@ -16,7 +16,7 @@ set -euo pipefail
 # ---- 项目配置 ----
 PROJECT="Tasks.xcodeproj"
 SCHEME="Tasks"
-APP_NAME="Tasks"                     # Release 产物 .app 的名字（PRODUCT_NAME），也作 dmg 卷名
+APP_NAME="CalendarTasks"             # Release 产物 .app 的名字（PRODUCT_NAME），也作 dmg 卷名
 DMG_PREFIX="CalendarTasks"
 APP_ENTITLEMENTS="Tasks/Tasks.entitlements"  # 主 App entitlements（改 Info.plist 重签时带上，保留沙箱与日历权限）
 BG_2X="Resources/dmg-bg@2x.png"      # dmg 背景 @2x 图，不存在则不设背景

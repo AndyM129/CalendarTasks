@@ -29,8 +29,9 @@ targets:
           - /.config/CalendarTasks/
     settings:
       base:
-        PRODUCT_NAME: Tasks
-        MARKETING_VERSION: 0.1.2
+        # 模块名固定为 Tasks（产物名按配置区分，含连字符不能作模块名）
+        PRODUCT_MODULE_NAME: Tasks
+        MARKETING_VERSION: 0.1.3
         CURRENT_PROJECT_VERSION: 1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: 6.0
@@ -41,11 +42,13 @@ targets:
         DEVELOPMENT_TEAM: 9X349G8KD4
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "Apple Development: andy_m129@163.com (VRLXD5P3P7)"
-      # 开发版（Debug）与正式版（Release）用不同的显示名和 Bundle ID，可同时装在本机
+      # 开发版（Debug）与正式版（Release）用不同的 .app 名、显示名和 Bundle ID，可同时装在本机
       configs:
         Debug:
+          PRODUCT_NAME: CalendarTasks-Dev
           APP_DISPLAY_NAME: CalendarTasks-Dev
           PRODUCT_BUNDLE_IDENTIFIER: io.github.andym129.dev.calendar-tasks
         Release:
+          PRODUCT_NAME: CalendarTasks
           APP_DISPLAY_NAME: CalendarTasks
           PRODUCT_BUNDLE_IDENTIFIER: io.github.andym129.calendar-tasks

@@ -8,7 +8,7 @@
 set -euo pipefail
 
 cd "${0:A:h}/.."
-APP="build/DerivedData/Build/Products/Debug/Tasks.app"
+APP="build/DerivedData/Build/Products/Debug/CalendarTasks-Dev.app"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # SwiftUI 主窗口位置与尺寸的存储键
 FRAME_KEY='NSWindow Frame SwiftUI.ModifiedContent<SwiftUI.ModifiedContent<Tasks.ContentView, SwiftUI._EnvironmentKeyWritingModifier<Swift.Optional<Tasks.CalendarStore>>>, SwiftUI._FlexFrameLayout>-1-AppWindow-1'
@@ -43,8 +43,8 @@ if ! xcodebuild -project Tasks.xcodeproj -scheme Tasks -configuration Debug \
 fi
 echo "BUILD SUCCEEDED"
 
-# 只结束本工程编出的开发版，不影响已安装的正式版（进程名同为 Tasks）
-pkill -f "$PWD/$APP/Contents/MacOS/Tasks" 2>/dev/null && sleep 1 || true
+# 只结束本工程编出的开发版，不影响已安装的正式版
+pkill -f "$PWD/$APP/Contents/MacOS/" 2>/dev/null && sleep 1 || true
 
 if $refresh_icon; then
     touch "$APP" "$APP/Contents/Info.plist"
