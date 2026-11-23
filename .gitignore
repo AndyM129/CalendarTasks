@@ -5,3 +5,6 @@ DerivedData/
 xcuserdata/
 # 由 project.yml 经 XcodeGen 生成
 Tasks.xcodeproj/
+# 本机 Agent 配置（ifsd、AI 笔记库映射）
+.ifsd.yaml
+.agents-vault.yml
