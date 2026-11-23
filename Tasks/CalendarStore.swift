@@ -30,27 +30,32 @@ final class CalendarStore {
     var selectedCalendarIDs: Set<String> = [] {
         didSet {
             UserDefaults.standard.set(Array(selectedCalendarIDs), forKey: Self.selectedIDsKey)
+            saveConfig()
             reloadEvents()
         }
     }
 
     var groups: [CalendarGroup] = [] {
-        didSet {
-            if let data = try? JSONEncoder().encode(groups) {
-                UserDefaults.standard.set(data, forKey: Self.groupsKey)
-            }
-        }
+        didSet { saveConfig() }
     }
 
-    private static func loadGroups() -> [CalendarGroup] {
+    /// 旧版本存在 UserDefaults 里的组合，首次生成配置文件时迁移
+    private static func loadLegacyGroups() -> [CalendarGroup] {
         guard let data = UserDefaults.standard.data(forKey: groupsKey) else { return [] }
         return (try? JSONDecoder().decode([CalendarGroup].self, from: data)) ?? []
     }
 
     @ObservationIgnored private var changeObserver: NSObjectProtocol?
+    @ObservationIgnored private var defaultsObserver: NSObjectProtocol?
+    /// 配置文件里记下的日历引用（按 ID），本机找不到该日历时用它按名字重新匹配、写回时原样保留
+    @ObservationIgnored private var knownCalendarRefs: [String: ConfigFile.CalendarRef] = [:]
+    /// 最近一次读到或写入的配置，内容没变就不写文件
+    @ObservationIgnored private var savedConfig: ConfigFile.Content?
+    /// 配置文件格式有误时不写，免得覆盖用户手改的内容
+    @ObservationIgnored private var configWritable = true
 
     init() {
-        groups = Self.loadGroups()
+        loadConfig()
         #if DEBUG
         // 验证用：启动参数 -debugShowHidden YES 启动时就显示已隐藏的日程
         showHiddenEvents = UserDefaults.standard.bool(forKey: "debugShowHidden")
@@ -59,6 +64,12 @@ final class CalendarStore {
             forName: .EKEventStoreChanged, object: eventStore, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.reloadAll() }
+        }
+        // 设置窗口改 emoji、动画时长等写的是 UserDefaults，有改动就同步到配置文件
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveConfig() }
         }
         if authorization == .fullAccess { reloadAll() }
     }
@@ -292,13 +303,94 @@ final class CalendarStore {
             .sorted { $0.startDate < $1.startDate }
     }
 
+    // MARK: - 配置文件
+
+    private func loadConfig() {
+        switch ConfigFile.read() {
+        case .loaded(let content):
+            ConfigFile.applyPreferences(of: content)
+            for ref in content.calendarGroups.flatMap(\.calendars) + (content.selectedCalendars ?? []) {
+                knownCalendarRefs[ref.id] = ref
+            }
+            if let selected = content.selectedCalendars {
+                UserDefaults.standard.set(selected.map(\.id), forKey: Self.selectedIDsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.selectedIDsKey)
+            }
+            savedConfig = content
+            groups = content.calendarGroups.map {
+                CalendarGroup(id: $0.id, name: $0.name, tint: $0.tint, calendarIDs: Set($0.calendars.map(\.id)))
+            }
+        case .missing:
+            // 首次启动或旧版本升级：用 UserDefaults 里已有的设置生成配置文件
+            groups = Self.loadLegacyGroups()
+        case .invalid(let message):
+            configWritable = false
+            lastError = message
+            groups = Self.loadLegacyGroups()
+        }
+    }
+
+    private func saveConfig() {
+        guard configWritable else { return }
+        let prefs = ConfigFile.currentPreferences()
+        let selected = UserDefaults.standard.array(forKey: Self.selectedIDsKey) as? [String]
+        let content = ConfigFile.Content(
+            statusEmojis: prefs.status,
+            priorityEmojis: prefs.priority,
+            hiddenStatuses: prefs.hidden,
+            animationDuration: prefs.duration,
+            selectedCalendars: selected.map { refs(for: Set($0)) },
+            calendarGroups: groups.map {
+                ConfigFile.Group(id: $0.id, name: $0.name, tint: $0.tint, calendars: refs(for: $0.calendarIDs))
+            }
+        )
+        guard content != savedConfig else { return }
+        do {
+            try ConfigFile.write(content)
+            savedConfig = content
+        } catch {
+            // 只提示一次，之后不再尝试写
+            configWritable = false
+            lastError = "无法写入配置文件 \(ConfigFile.url.path)：\(error.localizedDescription)"
+        }
+    }
+
+    /// 本机找得到的日历取最新的账户名与日历名；找不到的保留配置文件里的原样
+    private func refs(for ids: Set<String>) -> [ConfigFile.CalendarRef] {
+        ids.map { id in
+            if let calendar = calendars.first(where: { $0.calendarIdentifier == id }) {
+                return ConfigFile.CalendarRef(id: id, account: calendar.source?.title ?? "", title: calendar.title)
+            }
+            return knownCalendarRefs[id] ?? ConfigFile.CalendarRef(id: id, account: "", title: "")
+        }
+        .sorted { ($0.account, $0.title, $0.id) < ($1.account, $1.title, $1.id) }
+    }
+
+    /// 本机没有这个 ID 的日历时，按配置里记的账户 + 日历名找本机的同名日历
+    private func resolvedID(_ id: String) -> String {
+        guard !calendars.contains(where: { $0.calendarIdentifier == id }),
+              let ref = knownCalendarRefs[id],
+              let match = calendars.first(where: { $0.title == ref.title && ($0.source?.title ?? "") == ref.account })
+        else { return id }
+        return match.calendarIdentifier
+    }
+
     // MARK: - 加载
 
     private func reloadAll() {
         calendars = eventStore.calendars(for: .event)
         let validIDs = Set(calendars.map(\.calendarIdentifier))
+        // 配置来自别的机器时，日历 ID 对不上，按账户 + 日历名换成本机的 ID
+        let resolvedGroups = groups.map { group in
+            var group = group
+            group.calendarIDs = Set(group.calendarIDs.map(resolvedID))
+            return group
+        }
+        if resolvedGroups != groups { groups = resolvedGroups }
+        saveConfig()
         if let saved = UserDefaults.standard.array(forKey: Self.selectedIDsKey) as? [String] {
-            let kept = Set(saved).intersection(validIDs)
+            let kept = Set(saved.map(resolvedID)).intersection(validIDs)
             if kept != selectedCalendarIDs { selectedCalendarIDs = kept; return }
         } else {
             selectedCalendarIDs = validIDs

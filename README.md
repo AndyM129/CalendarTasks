@@ -15,6 +15,7 @@
 - 快捷键：⌘← 前一天、⌘→ 后一天、⌘T 今天、⌘J 选日期，编辑文字时不触发。
 - 窗口自适应：窗口窄于 500pt 时自动收起边栏，点边栏按钮时边栏浮在列表上方。
 - 设置（⌘,）：状态、优先级、隐藏的状态的 emoji 序列，界面动画时长。
+- 本地配置文件：上述设置、日历组合与勾选的日历保存在 `~/.config/CalendarTasks/config.json`（开发版为 `config-dev.json`），卸载重装或换机后放回即可复用；换机后日历 ID 对不上时按「账户 + 日历名」重新匹配。手工修改后重启 App 生效，格式有误时 App 不读也不覆盖它。
 
 `#标签` 写在标题里时，只在显示上移到副标题行，日历数据不改。
 
@@ -44,7 +45,7 @@ scripts/tasks-run.sh --shot build/a.png   # 启动后截屏
 scripts/tasks-run.sh -- -debugBench resize # 传入 Debug 启动参数
 ```
 
-首次启动时按提示授予日历「完全访问」权限。App 开启了 App Sandbox，只申请日历权限。
+首次启动时按提示授予日历「完全访问」权限。App 开启了 App Sandbox，只申请日历权限，另外只放开 `~/.config/CalendarTasks/` 的读写（存配置文件）。
 
 # 4、目录结构
 
@@ -53,6 +54,7 @@ scripts/tasks-run.sh -- -debugBench resize # 传入 Debug 启动参数
 - `Tasks/EventEditor.swift`、`EventEditorParts.swift`、`RepeatDraft.swift`、`AlarmChoice.swift`：编辑面板。
 - `Tasks/GrowingTextView.swift`、`DetachablePopover.swift`：自适应高度输入框、可拖出的浮层。
 - `Tasks/EmojiMarkers.swift`：状态、优先级与 `#标签` 解析。
+- `Tasks/ConfigFile.swift`：本地配置文件的读写。
 - `Tasks/DebugBench.swift`：Debug 版的性能与动画测量工具。
 - `References/`：设计参考截图。
 - `scripts/tasks-run.sh`：编译运行脚本。

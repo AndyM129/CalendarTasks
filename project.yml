@@ -24,6 +24,9 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.personal-information.calendars: true
+        # 用户设置存到 ~/.config/CalendarTasks/，卸载重装、换机后可复用
+        com.apple.security.temporary-exception.files.home-relative-path.read-write:
+          - /.config/CalendarTasks/
     settings:
       base:
         PRODUCT_NAME: Tasks
