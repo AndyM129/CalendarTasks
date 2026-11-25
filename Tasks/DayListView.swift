@@ -372,6 +372,8 @@ struct EventRow: View {
     @AppStorage(EmojiMarkers.priorityKey) private var priorityText = EmojiMarkers.defaultPriorities
     /// 重复日程待确认范围的新标题
     @State private var pendingTitle: String?
+    /// 重复日程待确认范围的新日历
+    @State private var pendingCalendarID: String?
     @State private var choosingStatus = false
 
     let event: EKEvent
@@ -419,10 +421,18 @@ struct EventRow: View {
                 .lineLimit(1)
             }
             Spacer()
-            Circle()
-                .fill(Color(cgColor: event.calendar.cgColor))
-                .frame(width: 8, height: 8)
-                .help(event.calendar.title)
+            // 单击色点换所属日历，和点开头 emoji 改状态一样不触发行选中
+            if editable {
+                CalendarColorMenu(calendarID: calendarBinding, dotSize: 8)
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.plain)
+                    .help("\(event.calendar.title)，点击更换日历")
+            } else {
+                Circle()
+                    .fill(Color(cgColor: event.calendar.cgColor))
+                    .frame(width: 8, height: 8)
+                    .help(event.calendar.title)
+            }
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
@@ -437,6 +447,34 @@ struct EventRow: View {
         } message: {
             Text("要修改此次日程，还是此次及将来所有日程？")
         }
+        .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingCalendarID != nil },
+                                                             set: { if !$0 { pendingCalendarID = nil } })) {
+            Button("仅此次") { moveCalendar(span: .thisEvent) }
+            Button("将来所有") { moveCalendar(span: .futureEvents) }
+        } message: {
+            Text("要更换此次日程的日历，还是此次及将来所有日程？")
+        }
+    }
+
+    /// 选了新日历：重复日程先确认范围
+    private var calendarBinding: Binding<String> {
+        Binding(
+            get: { event.calendar.calendarIdentifier },
+            set: { id in
+                guard id != event.calendar.calendarIdentifier else { return }
+                if event.hasRecurrenceRules {
+                    pendingCalendarID = id
+                } else {
+                    store.moveEvent(event, toCalendar: id, span: .thisEvent)
+                }
+            }
+        )
+    }
+
+    private func moveCalendar(span: EKSpan) {
+        guard let pendingCalendarID else { return }
+        store.moveEvent(event, toCalendar: pendingCalendarID, span: span)
+        self.pendingCalendarID = nil
     }
 
     private var statuses: [String] { EmojiMarkers.items(statusText, fallback: EmojiMarkers.defaultStatuses) }

@@ -15,10 +15,11 @@ struct EditorCard<Content: View>: View {
     }
 }
 
-/// 标题右侧的日历选择：显示当前日历的颜色圆点，点开列出可编辑的日历
+/// 标题右侧的日历选择：显示当前日历的颜色圆点，点开列出可编辑的日历。日程列表行末尾的色点也用它
 struct CalendarColorMenu: View {
     @Environment(CalendarStore.self) private var store
     @Binding var calendarID: String
+    var dotSize: CGFloat = 12
 
     var body: some View {
         Menu {
@@ -34,7 +35,7 @@ struct CalendarColorMenu: View {
                 }
             }
         } label: {
-            Image(nsImage: Self.dot(currentColor))
+            Image(nsImage: Self.dot(currentColor, size: dotSize))
         }
         .menuStyle(.button)
         .fixedSize()

@@ -272,6 +272,17 @@ final class CalendarStore {
         undoManager.setActionName(actionName)
     }
 
+    // MARK: - 换日历
+
+    /// 换日程所属日历，可撤销。新日历没勾选时日程会从列表里消失，提示里写明移到了哪个日历
+    func moveEvent(_ event: EKEvent, toCalendar id: String, span: EKSpan) {
+        guard id != event.calendar.calendarIdentifier,
+              let calendar = calendars.first(where: { $0.calendarIdentifier == id }) else { return }
+        let before = EventSnapshot(event, keepsRecurrence: true)
+        event.calendar = calendar
+        save(event, span: span, undoing: before, actionName: "更换日历", message: "已移到「\(calendar.title)」")
+    }
+
     // MARK: - 新增
 
     /// 新日程所在日历：系统默认日历在勾选中时用它，否则用勾选里第一个可编辑的日历
