@@ -1,6 +1,7 @@
 import EventKit
 import Observation
 import SwiftUI
+import ToastKit
 
 /// 封装 EventKit：权限、日历列表、所选日历与当日日程。
 @Observable
@@ -185,12 +186,26 @@ final class CalendarStore {
 
     // MARK: - 写回
 
-    /// 最近一次写入失败的说明，界面弹窗展示后清空
+    /// 配置文件读写出错的说明，界面弹窗展示后清空；日程保存失败改用错误提示（toasts）
     var lastError: String?
+
+    /// 改动结果的提示（已保存、已删除、已撤销、保存失败等），显示在列表底部
+    let toasts = ToastCenter()
 
     /// 主窗口的撤销管理器，由 ContentView 设置。编辑浮层可能在独立窗口里，
     /// 修改日程统一登记到主窗口，和删除共用一个撤销栈
     @ObservationIgnored weak var undoManager: UndoManager?
+
+    /// 提示上的「撤销」按钮，撤销的是刚登记的那一步
+    private var undoAction: Toast.Action? {
+        undoManager.map { manager in Toast.Action("撤销") { manager.undo() } }
+    }
+
+    /// 撤销 / 重做执行完后的提示，如「已撤销编辑日程」
+    private func showUndoResult(_ manager: UndoManager, actionName: String) {
+        toasts.show(Toast((manager.isRedoing ? "已重做" : "已撤销") + actionName, kind: .info,
+                          systemImage: manager.isRedoing ? "arrow.uturn.forward.circle.fill" : "arrow.uturn.backward.circle.fill"))
+    }
 
     /// 改标题（状态 / 优先级 emoji）。completesAllDay 为 true 时，全天日程同时改为非全天、起止都设为当前分钟。
     /// 改成「隐藏的状态」时先留在列表里 3 秒，再带过渡隐藏
@@ -208,7 +223,8 @@ final class CalendarStore {
         let id = event.calendarItemIdentifier
         let willHide = isHiddenStatus(of: event)
         if willHide { pendingHideIDs.insert(id) }
-        guard save(event, span: span, undoing: before, actionName: "修改状态"), willHide else {
+        let message = marked(event).status.map { "已标为 \($0)" } ?? "已清除状态"
+        guard save(event, span: span, undoing: before, actionName: "修改状态", message: message), willHide else {
             pendingHideIDs.remove(id)
             return
         }
@@ -218,7 +234,7 @@ final class CalendarStore {
         }
     }
 
-    /// 保存改动；失败时撤回未保存的修改并记录原因
+    /// 保存改动；失败时撤回未保存的修改并提示原因
     @discardableResult
     func save(_ event: EKEvent, span: EKSpan) -> Bool {
         defer { reloadEvents() }
@@ -227,16 +243,18 @@ final class CalendarStore {
             return true
         } catch {
             event.rollback()
-            lastError = error.localizedDescription
+            toasts.show("保存失败：" + error.localizedDescription, kind: .error)
             return false
         }
     }
 
-    /// 保存改动，并登记 ⌘Z 撤销：撤销时把日程改回 before 的内容，可再重做。before 须在改动前取
+    /// 保存改动，并登记 ⌘Z 撤销：撤销时把日程改回 before 的内容，可再重做。before 须在改动前取。
+    /// 成功后显示 message，带「撤销」按钮
     @discardableResult
-    func save(_ event: EKEvent, span: EKSpan, undoing before: EventSnapshot, actionName: String) -> Bool {
+    func save(_ event: EKEvent, span: EKSpan, undoing before: EventSnapshot, actionName: String, message: String) -> Bool {
         guard save(event, span: span) else { return false }
         registerRevert(of: event, to: before, span: span, actionName: actionName)
+        toasts.show(message, kind: .success, action: undoAction)
         return true
     }
 
@@ -248,6 +266,7 @@ final class CalendarStore {
             let current = EventSnapshot(event, keepsRecurrence: true)
             snapshot.apply(to: event, in: store.eventStore)
             guard store.save(event, span: span) else { return }
+            store.showUndoResult(undoManager, actionName: actionName)
             store.registerRevert(of: event, to: current, span: span, actionName: actionName)
         }
         undoManager.setActionName(actionName)
@@ -268,7 +287,7 @@ final class CalendarStore {
     /// 只给标题时默认为当日全天日程
     func createEvent(title: String) {
         guard let calendar = calendarForNewEvents else {
-            lastError = "所选日历都不可编辑，请先勾选一个可编辑的日历。"
+            toasts.show("所选日历都不可编辑，请先勾选一个可编辑的日历", kind: .error)
             return
         }
         let event = EKEvent(eventStore: eventStore)
@@ -290,7 +309,7 @@ final class CalendarStore {
         do {
             try eventStore.remove(event, span: span, commit: true)
         } catch {
-            lastError = error.localizedDescription
+            toasts.show("删除失败：" + error.localizedDescription, kind: .error)
             reloadEvents()
             return
         }
@@ -300,12 +319,18 @@ final class CalendarStore {
             store.restore(snapshot, undoManager: undoManager)
         }
         undoManager.setActionName("删除日程")
+        if undoManager.isRedoing {
+            showUndoResult(undoManager, actionName: "删除日程")
+        } else {
+            toasts.show("已删除「\(snapshot.title ?? "")」", kind: .success, action: undoAction)
+        }
     }
 
     private func restore(_ snapshot: EventSnapshot, undoManager: UndoManager) {
         let event = snapshot.makeEvent(in: eventStore)
         let span: EKSpan = event.hasRecurrenceRules ? .futureEvents : .thisEvent
         guard save(event, span: span) else { return }
+        showUndoResult(undoManager, actionName: "删除日程")
         undoManager.registerUndo(withTarget: self) { store in
             store.delete(event, span: span, undoManager: undoManager)
         }

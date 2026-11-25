@@ -1,4 +1,5 @@
 import SwiftUI
+import ToastKit
 
 struct ContentView: View {
     /// 窗口窄于此宽度时自动收起边栏，略大于两栏最小宽度之和（220 + 260），保证收起发生在窗口被两栏卡住之前
@@ -45,10 +46,19 @@ struct ContentView: View {
                     }
                 }
                 .animation(.ui, value: store.searchText.isEmpty)
+                .toastHost(store.toasts, animation: .ui)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 640)
             }
             .overlay { floatingSidebarOverlay }
             #if DEBUG
+            // 验证用：启动参数 -debugToast YES，3 秒后依次显示成功、出错两种提示（不改日历）
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugToast") else { return }
+                try? await Task.sleep(for: .seconds(3))
+                store.toasts.show("已标为 ✅", kind: .success, action: Toast.Action("撤销") {})
+                try? await Task.sleep(for: .seconds(4))
+                store.toasts.show("保存失败：示例错误信息", kind: .error)
+            }
             // 验证用：启动参数 -debugFloatingSidebar YES 直接打开浮动边栏
             .task {
                 guard UserDefaults.standard.bool(forKey: "debugFloatingSidebar") else { return }

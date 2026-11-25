@@ -122,7 +122,8 @@ struct DayListView: View {
                  ? "可以用 ⌘Z 撤销：「仅此次」恢复为单次日程，「将来所有」从这次起按原规则重建。"
                  : "可以用 ⌘Z 撤销。")
         }
-        .alert("无法保存日程", isPresented: Binding(get: { store.lastError != nil },
+        // 日程保存失败改用错误提示，这里只剩配置文件读写出错
+        .alert("配置文件出错", isPresented: Binding(get: { store.lastError != nil },
                                                 set: { if !$0 { store.lastError = nil } })) {
             Button("好") {}
         } message: {

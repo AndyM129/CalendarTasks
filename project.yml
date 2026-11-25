@@ -5,12 +5,18 @@ options:
     macOS: "26.0"
   developmentLanguage: zh-Hans
   createIntermediateGroups: true
+packages:
+  # 本地包，稳定后拆成独立仓库供其他 App 复用
+  ToastKit:
+    path: Packages/ToastKit
 targets:
   Tasks:
     type: application
     platform: macOS
     sources:
       - path: Tasks
+    dependencies:
+      - package: ToastKit
     info:
       path: Tasks/Info.plist
       properties:

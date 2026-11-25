@@ -256,6 +256,6 @@ struct EventEditor: View {
             if let offset = alarm.offset { alarms.insert(EKAlarm(relativeOffset: offset), at: 0) }
             event.alarms = alarms
         }
-        if store.save(event, span: span, undoing: before, actionName: "编辑日程") { dismiss() }
+        if store.save(event, span: span, undoing: before, actionName: "编辑日程", message: "已保存修改") { dismiss() }
     }
 }
