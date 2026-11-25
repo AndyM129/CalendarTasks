@@ -119,9 +119,13 @@ struct EventEditor: View {
         .background(WindowReader(session: session))
         // 关闭面板（点外面、Esc、点「完成」、关掉拖出的窗口）时保存
         .onDisappear(perform: autosave)
-        // 拖成独立窗口后，切到别的窗口时也保存，窗口保留
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
-            if let window = session.view?.window, note.object as? NSWindow === window { autosave() }
+        // 拖成独立窗口后，焦点离开时也保存，窗口保留：本 App 的别的窗口成为主窗口，或切到别的 App。
+        // 不只靠面板窗口自己的 didResignKey：实测拖出的窗口在切到别的 App 时收不到它
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            if let window = session.view?.window, note.object as? NSWindow !== window { autosave() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if session.view?.window != nil { autosave() }
         }
     }
 
