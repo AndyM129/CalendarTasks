@@ -3,7 +3,8 @@ import EventKit
 import SwiftUI
 
 /// 日程编辑浮层，参照系统日历的日程简介面板：标题（右侧选日历）→ 时间（摘要，点开展开全天/起止/重复/提醒）→ 备注 → URL。
-/// 地点、受邀人、附件不在这里编辑（EventKit 没有附件接口）；已有的地点保持不变
+/// 地点、受邀人、附件不在这里编辑（EventKit 没有附件接口）；已有的地点保持不变。
+/// 不设保存 / 取消按钮：面板关闭或拖成的窗口失去焦点时自动保存，改错了用 ⌘Z 撤销
 struct EventEditor: View {
     @Environment(CalendarStore.self) private var store
     let event: EKEvent
@@ -19,31 +20,45 @@ struct EventEditor: View {
     @State private var repeatDraft: RepeatDraft
     @State private var alarm: AlarmChoice
     @State private var timeExpanded = false
-    @State private var askingSpan = false
+    /// 上次保存（或打开时）的内容，和它相同就不保存
+    @State private var baseline: Fields
+    @State private var session = EditorSession()
 
-    private let originalRepeat: RepeatDraft
-    private let originalAlarm: AlarmChoice
+    private struct Fields: Equatable {
+        var title, notes, urlText, calendarID: String
+        var isAllDay: Bool
+        var start, end: Date
+        var repeatDraft: RepeatDraft
+        var alarm: AlarmChoice
+    }
 
     init(event: EKEvent, dismiss: @escaping () -> Void) {
         self.event = event
         self.dismiss = dismiss
-        _title = State(initialValue: event.title ?? "")
-        _isAllDay = State(initialValue: event.isAllDay)
-        _start = State(initialValue: event.startDate)
-        _end = State(initialValue: event.endDate)
-        _calendarID = State(initialValue: event.calendar.calendarIdentifier)
-        _notes = State(initialValue: event.notes ?? "")
-        _urlText = State(initialValue: event.url?.absoluteString ?? "")
-        let draft = RepeatDraft(rule: event.recurrenceRules?.first)
-        originalRepeat = draft
-        _repeatDraft = State(initialValue: draft)
-        let currentAlarm = AlarmChoice.current(of: event)
-        originalAlarm = currentAlarm
-        _alarm = State(initialValue: currentAlarm)
+        let fields = Fields(title: event.title ?? "", notes: event.notes ?? "",
+                            urlText: event.url?.absoluteString ?? "", calendarID: event.calendar.calendarIdentifier,
+                            isAllDay: event.isAllDay, start: event.startDate, end: event.endDate,
+                            repeatDraft: RepeatDraft(rule: event.recurrenceRules?.first),
+                            alarm: AlarmChoice.current(of: event))
+        _baseline = State(initialValue: fields)
+        _title = State(initialValue: fields.title)
+        _isAllDay = State(initialValue: fields.isAllDay)
+        _start = State(initialValue: fields.start)
+        _end = State(initialValue: fields.end)
+        _calendarID = State(initialValue: fields.calendarID)
+        _notes = State(initialValue: fields.notes)
+        _urlText = State(initialValue: fields.urlText)
+        _repeatDraft = State(initialValue: fields.repeatDraft)
+        _alarm = State(initialValue: fields.alarm)
         #if DEBUG
         // 验证用：启动参数 -debugExpandTime YES 打开时直接展开时间卡片
         _timeExpanded = State(initialValue: UserDefaults.standard.bool(forKey: "debugExpandTime"))
         #endif
+    }
+
+    private var current: Fields {
+        Fields(title: title, notes: notes, urlText: urlText, calendarID: calendarID, isAllDay: isAllDay,
+               start: start, end: end, repeatDraft: repeatDraft, alarm: alarm)
     }
 
     var body: some View {
@@ -101,32 +116,24 @@ struct EventEditor: View {
             // 全天与定时的提醒选项不同，切换后原选项不再适用时改为「无」
             if !alarm.isKeepExisting, !AlarmChoice.choices(allDay: allDay).contains(alarm) { alarm = .none }
         }
-        .confirmationDialog("这是一个重复日程", isPresented: $askingSpan) {
-            // 改了重复规则只能作用于此次及将来
-            if repeatDraft == originalRepeat {
-                Button("仅此次") { commit(span: .thisEvent) }
-            }
-            Button("将来所有") { commit(span: .futureEvents) }
-        } message: {
-            Text(repeatDraft == originalRepeat ? "要修改此次日程，还是此次及将来所有日程？" : "修改重复规则会应用到此次及将来所有日程。")
+        .background(WindowReader(session: session))
+        // 关闭面板（点外面、Esc、点「完成」、关掉拖出的窗口）时保存
+        .onDisappear(perform: autosave)
+        // 拖成独立窗口后，切到别的窗口时也保存，窗口保留
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            if let window = session.view?.window, note.object as? NSWindow === window { autosave() }
         }
     }
 
     private var footer: some View {
         HStack {
-            Text("⌘↩ 保存")
+            Text("关闭时自动保存 · ⌘Z 撤销")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
             Spacer()
-            Button("取消", role: .cancel, action: dismiss)
-                .keyboardShortcut(.cancelAction)
-            // 回车留给输入框换行，保存用 ⌘↩
-            Button("保存") {
-                if event.hasRecurrenceRules { askingSpan = true } else { commit(span: .thisEvent) }
-            }
-            .keyboardShortcut(.return, modifiers: .command)
-            .buttonStyle(.borderedProminent)
-            .disabled(end < start || (!urlText.isEmpty && parsedURL == nil))
+            // 回车留给输入框换行，关闭用 ⌘↩
+            Button("完成", action: dismiss)
+                .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.top, 2)
     }
@@ -230,6 +237,37 @@ struct EventEditor: View {
 
     // MARK: - 存储
 
+    /// 有改动才保存。内容不合法时不保存并提示；重复日程每次都问范围（这一次拆出来后不再是重复日程，之后不再问）
+    private func autosave() {
+        guard !session.isSaving, current != baseline else { return }
+        if end < start || (!urlText.isEmpty && parsedURL == nil) {
+            store.toasts.show(end < start ? "未保存：结束时间早于开始时间" : "未保存：URL 格式不正确", kind: .error)
+            return
+        }
+        session.isSaving = true
+        defer { session.isSaving = false }
+        guard let span = event.hasRecurrenceRules ? askSpan() : .thisEvent else { return }
+        commit(span: span)
+    }
+
+    /// 面板可能已经关掉，确认用独立的系统弹窗；选「不保存」返回 nil
+    private func askSpan() -> EKSpan? {
+        let alert = NSAlert()
+        alert.messageText = "这是一个重复日程"
+        // 改了重复规则只能作用于此次及将来
+        let rulesChanged = repeatDraft != baseline.repeatDraft
+        alert.informativeText = rulesChanged ? "修改重复规则会应用到此次及将来所有日程。" : "要修改此次日程，还是此次及将来所有日程？"
+        if !rulesChanged { alert.addButton(withTitle: "仅此次") }
+        alert.addButton(withTitle: "将来所有")
+        alert.addButton(withTitle: "不保存")
+        let index = alert.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        switch (rulesChanged, index) {
+        case (false, 0): return .thisEvent
+        case (false, 1), (true, 0): return .futureEvents
+        default: return nil
+        }
+    }
+
     private func commit(span: EKSpan) {
         let before = EventSnapshot(event, keepsRecurrence: true)
         // 去掉首尾空白（含换行）
@@ -241,21 +279,46 @@ struct EventEditor: View {
         }
         event.startDate = start
         event.endDate = end
-        if let calendar = store.calendars.first(where: { $0.calendarIdentifier == calendarID }) {
+        // 日历变了才写：拆出来的那一次哪怕写回同一个日历，EventKit 也会报「无法更改重复字段」
+        if calendarID != event.calendar.calendarIdentifier,
+           let calendar = store.calendars.first(where: { $0.calendarIdentifier == calendarID }) {
             event.calendar = calendar
         }
         event.notes = notes.isEmpty ? nil : notes
         event.url = parsedURL
         // 只有改动过才覆盖，避免把编辑器表达不了的原规则 / 提醒冲掉
-        if repeatDraft != originalRepeat {
+        if repeatDraft != baseline.repeatDraft {
             event.recurrenceRules = repeatDraft.makeRule().map { [$0] }
         }
-        if alarm != originalAlarm, !alarm.isKeepExisting {
+        if alarm != baseline.alarm, !alarm.isKeepExisting {
             var alarms = event.alarms ?? []
             if !alarms.isEmpty { alarms.removeFirst() }
             if let offset = alarm.offset { alarms.insert(EKAlarm(relativeOffset: offset), at: 0) }
             event.alarms = alarms
         }
-        if store.save(event, span: span, undoing: before, actionName: "编辑日程", message: "已保存修改") { dismiss() }
+        if store.save(event, span: span, undoing: before, actionName: "编辑日程", message: "已保存修改") {
+            baseline = current
+        }
     }
+}
+
+/// 编辑面板的非界面状态。放在引用类型里：范围确认弹窗期间会再收到失焦通知，要立即看到 isSaving
+@MainActor
+private final class EditorSession {
+    /// 面板里的一个视图；拖成独立窗口后它会换到新窗口里，所以每次都从它取当前窗口
+    weak var view: NSView?
+    var isSaving = false
+}
+
+/// 把面板里的一个 NSView 交给 session，用来判断失焦的是不是面板自己的窗口
+private struct WindowReader: NSViewRepresentable {
+    let session: EditorSession
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        session.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
 }
