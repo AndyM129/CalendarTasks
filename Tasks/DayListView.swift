@@ -453,13 +453,13 @@ struct EventRow: View {
         } message: {
             Text("要修改此次日程，还是此次及将来所有日程？")
         }
-        .alert("是否更新为今日任务并完成？", isPresented: Binding(get: { completingTitle != nil },
-                                                        set: { if !$0 { completingTitle = nil } })) {
-            Button("是") { finishCompleting(.completeNow) }
-            Button("否") { finishCompleting(.completeOn(store.day)) }
+        .alert("标为完成", isPresented: Binding(get: { completingTitle != nil },
+                                            set: { if !$0 { completingTitle = nil } })) {
+            Button("移到今天（\(Self.dayText(.now))）") { finishCompleting(.completeNow) }
+            Button("留在当天（\(Self.dayText(store.day))）") { finishCompleting(.completeOn(store.day)) }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("选「否」则保留在 \(store.day.formatted(.dateTime.month().day()))，完成时间记为当天 23:59。")
+            Text("移到今天：完成时间记为现在；留在当天：完成时间记为当天 23:59。")
         }
         .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingCalendarID != nil },
                                                              set: { if !$0 { pendingCalendarID = nil } })) {
@@ -525,6 +525,11 @@ struct EventRow: View {
         completingTitle = nil
         // 等这个弹窗收起后再弹重复日程的范围确认，同时弹会被吞掉
         Task { applyStatus(title, change) }
+    }
+
+    /// 如「11月25日 星期三」，与列表大标题同一格式
+    private static func dayText(_ date: Date) -> String {
+        date.formatted(.dateTime.month().day().weekday(.wide))
     }
 
     /// 简短格式：同一天「08:00 ~ 09:00」，跨天「11/04 08:00 ~ 11/05 08:00」；全天跨天「全天 11/04 ~ 11/06」
