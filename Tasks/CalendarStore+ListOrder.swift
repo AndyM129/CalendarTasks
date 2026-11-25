@@ -30,7 +30,12 @@ extension CalendarStore {
     }
 
     func isHiddenStatus(of event: EKEvent) -> Bool {
-        guard let status = marked(event).status else { return false }
+        isHiddenStatus(marked(event).status)
+    }
+
+    /// 「隐藏的状态」也表示结果（如 ✅❎）：改成它时视为完成
+    func isHiddenStatus(_ status: String?) -> Bool {
+        guard let status else { return false }
         return hiddenStatusItems.contains(EmojiMarkers.normalized(status))
     }
 

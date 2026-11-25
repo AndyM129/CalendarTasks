@@ -367,11 +367,17 @@ private struct PerCharacterText: View {
 }
 
 struct EventRow: View {
+    private struct PendingStatus {
+        let title: String
+        let change: CalendarStore.StatusTimeChange
+    }
     @Environment(CalendarStore.self) private var store
     @AppStorage(EmojiMarkers.statusKey) private var statusText = EmojiMarkers.defaultStatuses
     @AppStorage(EmojiMarkers.priorityKey) private var priorityText = EmojiMarkers.defaultPriorities
-    /// 重复日程待确认范围的新标题
-    @State private var pendingTitle: String?
+    /// 重复日程待确认范围的新状态
+    @State private var pendingStatus: PendingStatus?
+    /// 非今天的全天日程改成结果状态，待用户选「改为今天」还是「保留原日期」的新标题
+    @State private var completingTitle: String?
     /// 重复日程待确认范围的新日历
     @State private var pendingCalendarID: String?
     @State private var choosingStatus = false
@@ -440,12 +446,20 @@ struct EventRow: View {
         .detachablePopover(isPresented: isEditing, store: store) { close in
             EventEditor(event: event, dismiss: close)
         }
-        .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingTitle != nil },
-                                                             set: { if !$0 { pendingTitle = nil } })) {
+        .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingStatus != nil },
+                                                             set: { if !$0 { pendingStatus = nil } })) {
             Button("仅此次") { commit(span: .thisEvent) }
             Button("将来所有") { commit(span: .futureEvents) }
         } message: {
             Text("要修改此次日程，还是此次及将来所有日程？")
+        }
+        .alert("是否更新为今日任务并完成？", isPresented: Binding(get: { completingTitle != nil },
+                                                        set: { if !$0 { completingTitle = nil } })) {
+            Button("是") { finishCompleting(.completeNow) }
+            Button("否") { finishCompleting(.completeOn(store.day)) }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("选「否」则保留在 \(store.day.formatted(.dateTime.month().day()))，完成时间记为当天 23:59。")
         }
         .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingCalendarID != nil },
                                                              set: { if !$0 { pendingCalendarID = nil } })) {
@@ -484,23 +498,33 @@ struct EventRow: View {
         var marked = marked
         marked.status = status
         guard marked.title != title else { return }
-        if event.hasRecurrenceRules {
-            pendingTitle = marked.title
+        if let change = store.statusTimeChange(of: event, to: status) {
+            applyStatus(marked.title, change)
         } else {
-            store.updateTitle(of: event, to: marked.title, span: .thisEvent, completesAllDay: completes(status))
+            completingTitle = marked.title
         }
     }
 
-    /// 全天日程标为 ✅ 即视为已完成：改为非全天、起止设为当前时间
-    private func completes(_ status: String?) -> Bool {
-        event.isAllDay && status.map(EmojiMarkers.normalized) == EmojiMarkers.normalized("✅")
+    /// 重复日程先确认范围，再写回
+    private func applyStatus(_ title: String, _ change: CalendarStore.StatusTimeChange) {
+        if event.hasRecurrenceRules {
+            pendingStatus = PendingStatus(title: title, change: change)
+        } else {
+            store.updateTitle(of: event, to: title, span: .thisEvent, timeChange: change)
+        }
     }
 
     private func commit(span: EKSpan) {
-        guard let pendingTitle else { return }
-        let status = MarkedTitle(pendingTitle, statuses: statuses, priorities: priorities).status
-        store.updateTitle(of: event, to: pendingTitle, span: span, completesAllDay: completes(status))
-        self.pendingTitle = nil
+        guard let pendingStatus else { return }
+        store.updateTitle(of: event, to: pendingStatus.title, span: span, timeChange: pendingStatus.change)
+        self.pendingStatus = nil
+    }
+
+    private func finishCompleting(_ change: CalendarStore.StatusTimeChange) {
+        guard let title = completingTitle else { return }
+        completingTitle = nil
+        // 等这个弹窗收起后再弹重复日程的范围确认，同时弹会被吞掉
+        Task { applyStatus(title, change) }
     }
 
     /// 简短格式：同一天「08:00 ~ 09:00」，跨天「11/04 08:00 ~ 11/05 08:00」；全天跨天「全天 11/04 ~ 11/06」

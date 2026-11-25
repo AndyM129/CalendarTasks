@@ -207,18 +207,49 @@ final class CalendarStore {
                           systemImage: manager.isRedoing ? "arrow.uturn.forward.circle.fill" : "arrow.uturn.backward.circle.fill"))
     }
 
-    /// 改标题（状态 / 优先级 emoji）。completesAllDay 为 true 时，全天日程同时改为非全天、起止都设为当前分钟。
+    /// 改状态时连带的时间调整
+    enum StatusTimeChange {
+        case none
+        /// 全天日程完成：改为非全天，起止都设为当前分钟（成为今天的日程）
+        case completeNow
+        /// 全天日程完成但保留所在日期：起止都设为 day 当天 23:59
+        case completeOn(Date)
+        /// 起止相同的完成日程改回未完成：恢复为当天的全天日程
+        case revertToAllDay
+    }
+
+    /// 改状态要怎么调时间。全天日程改成结果状态、且不在今天时，需要用户选 completeNow 还是 completeOn，返回 nil
+    func statusTimeChange(of event: EKEvent, to status: String?) -> StatusTimeChange? {
+        let completes = isHiddenStatus(status)
+        if event.isAllDay, completes {
+            return isToday ? .completeNow : nil
+        }
+        if !event.isAllDay, !completes, isHiddenStatus(of: event), event.startDate == event.endDate {
+            return .revertToAllDay
+        }
+        return StatusTimeChange.none
+    }
+
+    /// 改标题（状态 / 优先级 emoji），按 timeChange 连带调整时间。
     /// 改成「隐藏的状态」时先留在列表里 3 秒，再带过渡隐藏
-    func updateTitle(of event: EKEvent, to title: String, span: EKSpan, completesAllDay: Bool = false) {
+    func updateTitle(of event: EKEvent, to title: String, span: EKSpan, timeChange: StatusTimeChange = .none) {
         let before = EventSnapshot(event, keepsRecurrence: true)
         event.title = title
-        if completesAllDay, event.isAllDay {
-            let now = Calendar.current.dateInterval(of: .minute, for: .now)?.start ?? .now
-            event.isAllDay = false
-            // 全天日程的 timeZone 为 nil（浮动时间），不补上的话起止会按 UTC 解读，与本机时间差一个时区
-            event.timeZone = .current
-            event.startDate = now
-            event.endDate = now
+        let calendar = Calendar.current
+        switch timeChange {
+        case .none:
+            break
+        case .completeNow:
+            setPointInTime(of: event, to: calendar.dateInterval(of: .minute, for: .now)?.start ?? .now)
+        case .completeOn(let day):
+            let lastMinute = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: day) ?? day
+            setPointInTime(of: event, to: lastMinute)
+        case .revertToAllDay:
+            let day = calendar.startOfDay(for: event.startDate)
+            event.isAllDay = true
+            event.timeZone = nil
+            event.startDate = day
+            event.endDate = day
         }
         let id = event.calendarItemIdentifier
         let willHide = isHiddenStatus(of: event)
@@ -232,6 +263,15 @@ final class CalendarStore {
             try? await Task.sleep(for: .seconds(3))
             withAnimation(.ui) { _ = pendingHideIDs.remove(id) }
         }
+    }
+
+    /// 改为起止相同的非全天日程，表示完成时间
+    private func setPointInTime(of event: EKEvent, to date: Date) {
+        event.isAllDay = false
+        // 全天日程的 timeZone 为 nil（浮动时间），不补上的话起止会按 UTC 解读，与本机时间差一个时区
+        event.timeZone = .current
+        event.startDate = date
+        event.endDate = date
     }
 
     /// 保存改动；失败时撤回未保存的修改并提示原因
