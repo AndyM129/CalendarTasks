@@ -5,6 +5,7 @@ struct ContentView: View {
     private static let autoCollapseWidth: CGFloat = 500
 
     @Environment(CalendarStore.self) private var store
+    @Environment(\.undoManager) private var undoManager
     /// 冷启动时还原上次的边栏显示状态（用户手动开关的结果，不受自动收起影响）
     @AppStorage("sidebarVisible") private var savedSidebarVisible = true
     /// 界面实际用的边栏状态。用 @State 承接再写回 AppStorage：直接改 AppStorage 时视图更新不在
@@ -70,6 +71,7 @@ struct ContentView: View {
             }
             #endif
             .onChange(of: sidebarVisible) { _, visible in savedSidebarVisible = visible }
+            .onChange(of: undoManager, initial: true) { _, manager in store.undoManager = manager }
             // 启动时也要取一次宽度（onGeometryChange 不报初始值）
             .background {
                 GeometryReader { proxy in

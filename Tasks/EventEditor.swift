@@ -231,6 +231,7 @@ struct EventEditor: View {
     // MARK: - 存储
 
     private func commit(span: EKSpan) {
+        let before = EventSnapshot(event, keepsRecurrence: true)
         // 去掉首尾空白（含换行）
         event.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         event.isAllDay = isAllDay
@@ -255,6 +256,6 @@ struct EventEditor: View {
             if let offset = alarm.offset { alarms.insert(EKAlarm(relativeOffset: offset), at: 0) }
             event.alarms = alarms
         }
-        if store.save(event, span: span) { dismiss() }
+        if store.save(event, span: span, undoing: before, actionName: "编辑日程") { dismiss() }
     }
 }

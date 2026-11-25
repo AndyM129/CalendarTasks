@@ -188,9 +188,14 @@ final class CalendarStore {
     /// 最近一次写入失败的说明，界面弹窗展示后清空
     var lastError: String?
 
+    /// 主窗口的撤销管理器，由 ContentView 设置。编辑浮层可能在独立窗口里，
+    /// 修改日程统一登记到主窗口，和删除共用一个撤销栈
+    @ObservationIgnored weak var undoManager: UndoManager?
+
     /// 改标题（状态 / 优先级 emoji）。completesAllDay 为 true 时，全天日程同时改为非全天、起止都设为当前分钟。
     /// 改成「隐藏的状态」时先留在列表里 3 秒，再带过渡隐藏
     func updateTitle(of event: EKEvent, to title: String, span: EKSpan, completesAllDay: Bool = false) {
+        let before = EventSnapshot(event, keepsRecurrence: true)
         event.title = title
         if completesAllDay, event.isAllDay {
             let now = Calendar.current.dateInterval(of: .minute, for: .now)?.start ?? .now
@@ -203,7 +208,7 @@ final class CalendarStore {
         let id = event.calendarItemIdentifier
         let willHide = isHiddenStatus(of: event)
         if willHide { pendingHideIDs.insert(id) }
-        guard save(event, span: span), willHide else {
+        guard save(event, span: span, undoing: before, actionName: "修改状态"), willHide else {
             pendingHideIDs.remove(id)
             return
         }
@@ -225,6 +230,27 @@ final class CalendarStore {
             lastError = error.localizedDescription
             return false
         }
+    }
+
+    /// 保存改动，并登记 ⌘Z 撤销：撤销时把日程改回 before 的内容，可再重做。before 须在改动前取
+    @discardableResult
+    func save(_ event: EKEvent, span: EKSpan, undoing before: EventSnapshot, actionName: String) -> Bool {
+        guard save(event, span: span) else { return false }
+        registerRevert(of: event, to: before, span: span, actionName: actionName)
+        return true
+    }
+
+    private func registerRevert(of event: EKEvent, to snapshot: EventSnapshot, span: EKSpan, actionName: String) {
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { store in
+            // 日程已在别处被删除时 refresh 返回 false，不再改回
+            guard event.refresh() else { return }
+            let current = EventSnapshot(event, keepsRecurrence: true)
+            snapshot.apply(to: event, in: store.eventStore)
+            guard store.save(event, span: span) else { return }
+            store.registerRevert(of: event, to: current, span: span, actionName: actionName)
+        }
+        undoManager.setActionName(actionName)
     }
 
     // MARK: - 新增

@@ -8,6 +8,8 @@
 set -euo pipefail
 
 cd "${0:A:h}/.."
+# Agent 终端的 PATH 里可能没有 Homebrew，XcodeGen 装在这里
+export PATH="/opt/homebrew/bin:$PATH"
 APP="build/DerivedData/Build/Products/Debug/CalendarTasks-Dev.app"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # SwiftUI 主窗口位置与尺寸的存储键
