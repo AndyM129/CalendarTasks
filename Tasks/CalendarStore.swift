@@ -327,6 +327,21 @@ final class CalendarStore {
         undoManager.setActionName(actionName)
     }
 
+    // MARK: - 改日期
+
+    /// 按天平移日程（拖到列表两侧），时分不变；跨天日程起止一起移，时长不变。可撤销
+    func shiftEvent(_ event: EKEvent, byDays days: Int, span: EKSpan) {
+        let calendar = Calendar.current
+        guard days != 0, event.refresh(),
+              let start = calendar.date(byAdding: .day, value: days, to: event.startDate),
+              let end = calendar.date(byAdding: .day, value: days, to: event.endDate) else { return }
+        let before = EventSnapshot(event, keepsRecurrence: true)
+        event.startDate = start
+        event.endDate = end
+        save(event, span: span, undoing: before, actionName: "移动日程",
+             message: "已移至 \(start.formatted(.dateTime.month().day().weekday(.wide)))")
+    }
+
     // MARK: - 换日历
 
     /// 换日程所属日历，可撤销。新日历没勾选时日程会从列表里消失，提示里写明移到了哪个日历

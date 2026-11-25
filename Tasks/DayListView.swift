@@ -15,6 +15,22 @@ struct DayListView: View {
     @AppStorage("timedExpanded") private var savedTimedExpanded = true
     @State private var allDayExpanded = UserDefaults.standard.object(forKey: "allDayExpanded") as? Bool ?? true
     @State private var timedExpanded = UserDefaults.standard.object(forKey: "timedExpanded") as? Bool ?? true
+    // 拖动改日期（见 DayListDrag.swift）
+    @State private var drag: RowDrag?
+    @State private var rowFrames = RowFrames()
+    @State private var listWidth: CGFloat = 0
+    /// 指针停在两侧时的翻页计时
+    @State private var zoneTask: Task<Void, Never>?
+    /// 按 Esc 放弃后，忽略这次拖动剩下的事件，直到松手
+    @State private var dragCancelled = false
+    @State private var escMonitor: Any?
+    /// 重复日程拖完，待确认范围
+    @State private var pendingMove: PendingMove?
+
+    private struct PendingMove {
+        let event: EKEvent
+        let days: Int
+    }
 
     var body: some View {
         @Bindable var store = store
@@ -46,6 +62,20 @@ struct DayListView: View {
             // 换日期时列表直接换成新内容，不做增删过渡（整列表替换的过渡效果不好）；大标题的逐字动画不受影响
             .transaction(value: store.day) { $0.animation = nil }
         }
+        // 拖动手势挂在整个列表上而不是行上：拖到两侧翻页后原来那一行已不在列表里，挂在行上手势会被打断
+        .coordinateSpace(name: Self.listSpace)
+        .simultaneousGesture(dragGesture)
+        .overlay {
+            if let drag, !dragCancelled {
+                dragOverlay(drag)
+                    .transition(.opacity)
+            }
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in listWidth = width }
+            }
+        }
         // 可获得焦点，Delete 键和 ↑↓ 选择才能生效；不画系统焦点框
         .focusable()
         .focused($listFocused)
@@ -61,6 +91,15 @@ struct DayListView: View {
             try? await Task.sleep(for: .seconds(3))
             selection = store.allDayEvents.first ?? store.timedEvents.first
             if UserDefaults.standard.bool(forKey: "debugEditFirst") { editingEvent = selection }
+        }
+        // 验证用：-debugDragOverlay YES，3 秒后模拟拖着第一条日程停在右侧，只显示引导，不松手、不改日历
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugDragOverlay") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard let event = store.allDayEvents.first ?? store.timedEvents.first else { return }
+            drag = RowDrag(event: event, originDay: store.day, location: CGPoint(x: listWidth - 40, y: 200))
+            drag?.zone = 1
+            restartTick(1)
         }
         // 验证用：-debugBench collapse，4 秒后收起「全天」、再展开，记录「日程」分组标题的位置变化
         .task {
@@ -122,6 +161,14 @@ struct DayListView: View {
                  ? "可以用 ⌘Z 撤销：「仅此次」恢复为单次日程，「将来所有」从这次起按原规则重建。"
                  : "可以用 ⌘Z 撤销。")
         }
+        .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingMove != nil },
+                                                             set: { if !$0 { pendingMove = nil } }),
+                            presenting: pendingMove) { move in
+            Button("仅此次") { store.shiftEvent(move.event, byDays: move.days, span: .thisEvent) }
+            Button("将来所有") { store.shiftEvent(move.event, byDays: move.days, span: .futureEvents) }
+        } message: { _ in
+            Text("要移动此次日程，还是此次及将来所有日程？")
+        }
         // 日程保存失败改用错误提示，这里只剩配置文件读写出错
         .alert("配置文件出错", isPresented: Binding(get: { store.lastError != nil },
                                                 set: { if !$0 { store.lastError = nil } })) {
@@ -141,6 +188,15 @@ struct DayListView: View {
                 .padding(.horizontal, 12)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(selection == event ? 0.08 : 0)))
+                // 拖动开始时按位置找是哪一行
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.onChange(of: proxy.frame(in: .named(Self.listSpace)), initial: true) { _, frame in
+                            rowFrames.frames[event] = frame
+                        }
+                    }
+                }
+                .opacity(drag?.event == event ? 0.4 : 1)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { if editable { editingEvent = event } }
                 .simultaneousGesture(TapGesture().onEnded {
@@ -159,9 +215,130 @@ struct DayListView: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
+    private var visibleEvents: [EKEvent] {
+        (allDayExpanded ? store.allDayEvents : []) + (timedExpanded ? store.timedEvents : [])
+    }
+
+    // MARK: - 拖动改日期
+
+    // 规则：拖到两侧竖条，0.5 秒内松手移 1 天、列表不翻页；停够 0.5 秒列表翻 1 天，之后每多停 1 秒再翻 1 天；
+    // 翻页后在两侧或中间松手，都按已翻的天数移动，列表停在已翻到的那天；拖动中按 Esc 放弃，松手后用 ⌘Z 撤销
+
+    private static let listSpace = "dayList"
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.listSpace))
+            .onChanged(dragChanged)
+            .onEnded { _ in dragEnded() }
+    }
+
+    private var zoneWidth: CGFloat { max(listWidth * 0.15, 44) }
+
+    private func zone(at x: CGFloat) -> Int {
+        if x < zoneWidth + 8 { return -1 }
+        if x > listWidth - zoneWidth - 8 { return 1 }
+        return 0
+    }
+
+    private func dragChanged(_ value: DragGesture.Value) {
+        guard !dragCancelled else { return }
+        if drag == nil {
+            guard editingEvent == nil,
+                  let event = rowFrames.event(at: value.startLocation, among: visibleEvents),
+                  event.calendar.allowsContentModifications else { return }
+            selection = event
+            withAnimation(.ui) { drag = RowDrag(event: event, originDay: store.day, location: value.location) }
+            startEscMonitor()
+        }
+        drag?.location = value.location
+        let zone = zone(at: value.location.x)
+        if zone != drag?.zone { enterZone(zone) }
+    }
+
+    /// 进入某侧开始计时：先等 0.5 秒翻第一页，之后每 1 秒翻一页
+    private func enterZone(_ zone: Int) {
+        zoneTask?.cancel()
+        drag?.zone = zone
+        guard zone != 0 else { return }
+        restartTick(0.5)
+        zoneTask = Task {
+            var wait = 0.5
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(wait))
+                guard !Task.isCancelled, drag != nil else { return }
+                drag?.offset += zone
+                store.shiftDay(by: zone)
+                DragHaptics.tick()
+                wait = 1
+                restartTick(wait)
+            }
+        }
+    }
+
+    private func restartTick(_ length: Double) {
+        drag?.tickStart = .now
+        drag?.tickLength = length
+    }
+
+    private func dragEnded() {
+        zoneTask?.cancel()
+        stopEscMonitor()
+        if dragCancelled {
+            dragCancelled = false
+            return
+        }
+        guard let drag else { return }
+        withAnimation(.ui) { self.drag = nil }
+        let days = drag.releaseDays
+        guard days != 0 else { return }
+        if drag.event.hasRecurrenceRules {
+            pendingMove = PendingMove(event: drag.event, days: days)
+        } else {
+            store.shiftEvent(drag.event, byDays: days, span: .thisEvent)
+        }
+    }
+
+    /// Esc 放弃：列表回到开始拖动时那天，不移动
+    private func startEscMonitor() {
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53, let drag else { return event }
+            zoneTask?.cancel()
+            dragCancelled = true
+            store.day = drag.originDay
+            withAnimation(.ui) { self.drag = nil }
+            return nil
+        }
+    }
+
+    private func stopEscMonitor() {
+        if let escMonitor { NSEvent.removeMonitor(escMonitor) }
+        escMonitor = nil
+    }
+
+    private func dragOverlay(_ drag: RowDrag) -> some View {
+        let base = Calendar.current.date(byAdding: .day, value: drag.offset, to: drag.originDay) ?? drag.originDay
+        let target = { (step: Int) in Calendar.current.date(byAdding: .day, value: step, to: base) ?? base }
+        return ZStack {
+            HStack {
+                DragZone(direction: -1, target: target(-1), isActive: drag.zone == -1, drag: drag)
+                    .frame(width: zoneWidth)
+                Spacer()
+                DragZone(direction: 1, target: target(1), isActive: drag.zone == 1, drag: drag)
+                    .frame(width: zoneWidth)
+            }
+            .padding(8)
+            DragResultCapsule(drag: drag)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 16)
+            DragGhost(title: drag.event.title ?? "")
+                .position(x: drag.location.x, y: drag.location.y - 20)
+        }
+        .allowsHitTesting(false)
+    }
+
     /// ↑↓ 在可见日程间移动选中
     private func moveSelection(by step: Int) -> KeyPress.Result {
-        let visible = (allDayExpanded ? store.allDayEvents : []) + (timedExpanded ? store.timedEvents : [])
+        let visible = visibleEvents
         guard !visible.isEmpty else { return .ignored }
         let index = selection.flatMap { visible.firstIndex(of: $0) }.map { $0 + step } ?? (step > 0 ? 0 : visible.count - 1)
         selection = visible[min(max(index, 0), visible.count - 1)]
