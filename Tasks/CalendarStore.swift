@@ -212,7 +212,7 @@ final class CalendarStore {
         case none
         /// 全天日程完成：改为非全天，起止都设为当前分钟（成为今天的日程）
         case completeNow
-        /// 全天日程完成但保留所在日期：起止都设为 day 当天 23:59
+        /// 全天日程完成但保留所在日期：起止都设为 day 当天 00:00
         case completeOn(Date)
         /// 起止相同的完成日程改回未完成：恢复为当天的全天日程
         case revertToAllDay
@@ -235,22 +235,7 @@ final class CalendarStore {
     func updateTitle(of event: EKEvent, to title: String, span: EKSpan, timeChange: StatusTimeChange = .none) {
         let before = EventSnapshot(event, keepsRecurrence: true)
         event.title = title
-        let calendar = Calendar.current
-        switch timeChange {
-        case .none:
-            break
-        case .completeNow:
-            setPointInTime(of: event, to: calendar.dateInterval(of: .minute, for: .now)?.start ?? .now)
-        case .completeOn(let day):
-            let lastMinute = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: day) ?? day
-            setPointInTime(of: event, to: lastMinute)
-        case .revertToAllDay:
-            let day = calendar.startOfDay(for: event.startDate)
-            event.isAllDay = true
-            event.timeZone = nil
-            event.startDate = day
-            event.endDate = day
-        }
+        applyTimeChange(timeChange, to: event)
         let id = event.calendarItemIdentifier
         let willHide = isHiddenStatus(of: event)
         if willHide { pendingHideIDs.insert(id) }
@@ -262,6 +247,24 @@ final class CalendarStore {
         Task {
             try? await Task.sleep(for: .seconds(3))
             withAnimation(.ui) { _ = pendingHideIDs.remove(id) }
+        }
+    }
+
+    func applyTimeChange(_ change: StatusTimeChange, to event: EKEvent) {
+        let calendar = Calendar.current
+        switch change {
+        case .none:
+            break
+        case .completeNow:
+            setPointInTime(of: event, to: calendar.dateInterval(of: .minute, for: .now)?.start ?? .now)
+        case .completeOn(let day):
+            setPointInTime(of: event, to: calendar.startOfDay(for: day))
+        case .revertToAllDay:
+            let day = calendar.startOfDay(for: event.startDate)
+            event.isAllDay = true
+            event.timeZone = nil
+            event.startDate = day
+            event.endDate = day
         }
     }
 
@@ -292,10 +295,21 @@ final class CalendarStore {
     /// 成功后显示 message，带「撤销」按钮
     @discardableResult
     func save(_ event: EKEvent, span: EKSpan, undoing before: EventSnapshot, actionName: String, message: String) -> Bool {
+        let start = event.startDate, end = event.endDate
         guard save(event, span: span) else { return false }
+        fixDrift(of: event, start: start, end: end, span: span)
         registerRevert(of: event, to: before, span: span, actionName: actionName)
         toasts.show(message, kind: .success, action: undoAction)
         return true
+    }
+
+    /// 重复的全天日程（浮动时间）按「仅此次」改成定时，第一次保存把这一次拆出系列时，EventKit 会把起止按 UTC 解读，
+    /// 偏一个时区（如 00:00 存成 08:00）。保存后读回开始时间，偏了就按期望值再存一次，第二次不会再偏
+    private func fixDrift(of event: EKEvent, start: Date?, end: Date?, span: EKSpan) {
+        guard span == .thisEvent, let start, let end, event.refresh(), event.startDate != start else { return }
+        event.startDate = start
+        event.endDate = end
+        save(event, span: .thisEvent)
     }
 
     private func registerRevert(of event: EKEvent, to snapshot: EventSnapshot, span: EKSpan, actionName: String) {
@@ -304,8 +318,9 @@ final class CalendarStore {
             // 日程已在别处被删除时 refresh 返回 false，不再改回
             guard event.refresh() else { return }
             let current = EventSnapshot(event, keepsRecurrence: true)
-            snapshot.apply(to: event, in: store.eventStore)
+            snapshot.apply(to: event, in: store.eventStore, restoresRecurrence: span == .futureEvents)
             guard store.save(event, span: span) else { return }
+            store.fixDrift(of: event, start: snapshot.startDate, end: snapshot.endDate, span: span)
             store.showUndoResult(undoManager, actionName: actionName)
             store.registerRevert(of: event, to: current, span: span, actionName: actionName)
         }

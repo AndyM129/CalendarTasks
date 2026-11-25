@@ -49,19 +49,25 @@ struct EventSnapshot {
         return event
     }
 
-    /// 把已有日程改回快照里的内容（撤销修改用）。重复规则只在与快照不同时才写，
-    /// 避免「仅此次」的改动也去碰系列的规则
-    func apply(to event: EKEvent, in store: EKEventStore) {
+    /// 把已有日程改回快照里的内容（撤销修改用）。restoresRecurrence 为 false（「仅此次」的改动）时不碰重复规则：
+    /// 这一次已从系列里拆出来，再写规则 EventKit 会报「无法更改重复字段」；为 true 时也只在与快照不同时才写
+    func apply(to event: EKEvent, in store: EKEventStore, restoresRecurrence: Bool) {
         event.title = title
         event.isAllDay = isAllDay
         event.timeZone = timeZone
         event.startDate = startDate
         event.endDate = endDate
-        if let calendar = store.calendar(withIdentifier: calendarID) { event.calendar = calendar }
+        // 日历和提醒只在变了时才写：拆出来的那一次哪怕写回同一个日历，EventKit 也会报「无法更改重复字段」
+        if event.calendar.calendarIdentifier != calendarID, let calendar = store.calendar(withIdentifier: calendarID) {
+            event.calendar = calendar
+        }
         event.location = location
         event.notes = notes
         event.url = url
-        event.alarms = alarms.compactMap { $0.copy() as? EKAlarm }
+        if (event.alarms ?? []).map(\.description) != alarms.map(\.description) {
+            event.alarms = alarms.compactMap { $0.copy() as? EKAlarm }
+        }
+        guard restoresRecurrence else { return }
         let current = (event.recurrenceRules ?? []).map(\.description)
         if current != recurrenceRules.map(\.description) {
             event.recurrenceRules = recurrenceRules.isEmpty ? nil : recurrenceRules.compactMap { $0.copy() as? EKRecurrenceRule }

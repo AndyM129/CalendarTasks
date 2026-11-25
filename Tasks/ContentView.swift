@@ -51,6 +51,17 @@ struct ContentView: View {
             }
             .overlay { floatingSidebarOverlay }
             #if DEBUG
+            // 验证用：启动参数 -debugBench recurringTimeChange / inspectTest，见 DebugTimeChangeProbe.swift
+            .task {
+                guard UserDefaults.standard.string(forKey: "debugBench") == "recurringTimeChange" else { return }
+                try? await Task.sleep(for: .seconds(2))
+                await store.debugProbeRecurringTimeChange()
+            }
+            .task {
+                guard UserDefaults.standard.string(forKey: "debugBench") == "inspectTest" else { return }
+                try? await Task.sleep(for: .seconds(2))
+                store.debugInspectTestEvents()
+            }
             // 验证用：启动参数 -debugToast YES，3 秒后依次显示成功、出错两种提示（不改日历）
             .task {
                 guard UserDefaults.standard.bool(forKey: "debugToast") else { return }

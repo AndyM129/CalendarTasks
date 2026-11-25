@@ -459,7 +459,7 @@ struct EventRow: View {
             Button("留在当天（\(Self.dayText(store.day))）") { finishCompleting(.completeOn(store.day)) }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("移到今天：完成时间记为现在\n留在当天：完成时间记为当天 23:59")
+            Text("移到今天：完成时间记为现在\n留在当天：完成时间记为当天 00:00")
         }
         .confirmationDialog("这是一个重复日程", isPresented: Binding(get: { pendingCalendarID != nil },
                                                              set: { if !$0 { pendingCalendarID = nil } })) {
