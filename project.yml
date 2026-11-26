@@ -33,11 +33,14 @@ targets:
         # 用户设置存到 ~/.config/CalendarTasks/，卸载重装、换机后可复用
         com.apple.security.temporary-exception.files.home-relative-path.read-write:
           - /.config/CalendarTasks/
+        # 启动时读系统为本 App 生成的崩溃报告，复制到 ~/.config/CalendarTasks/crashes/
+        com.apple.security.temporary-exception.files.home-relative-path.read-only:
+          - /Library/Logs/DiagnosticReports/
     settings:
       base:
         # 模块名固定为 Tasks（产物名按配置区分，含连字符不能作模块名）
         PRODUCT_MODULE_NAME: Tasks
-        MARKETING_VERSION: 0.2.0
+        MARKETING_VERSION: 0.2.1
         CURRENT_PROJECT_VERSION: 1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: 6.0

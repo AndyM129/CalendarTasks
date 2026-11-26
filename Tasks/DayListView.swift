@@ -191,9 +191,11 @@ struct DayListView: View {
                 // 拖动开始时按位置找是哪一行
                 .background {
                     GeometryReader { proxy in
-                        Color.clear.onChange(of: proxy.frame(in: .named(Self.listSpace)), initial: true) { _, frame in
-                            rowFrames.frames[event] = frame
-                        }
+                        Color.clear
+                            .onChange(of: proxy.frame(in: .named(Self.listSpace)), initial: true) { _, frame in
+                                rowFrames.set(frame, for: event)
+                            }
+                            .onDisappear { rowFrames.remove(event) }
                     }
                 }
                 .opacity(drag?.event == event ? 0.4 : 1)

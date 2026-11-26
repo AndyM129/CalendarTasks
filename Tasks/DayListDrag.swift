@@ -20,13 +20,23 @@ struct RowDrag {
     var releaseDays: Int { zone != 0 && offset == 0 ? zone : offset }
 }
 
-/// 列表里各行的位置（相对列表视口）。用引用类型存，滚动时更新不触发列表重绘
+/// 列表里各行的位置（相对列表视口）。用引用类型存，滚动时更新不触发列表重绘。
+/// 按对象身份记，不用 EKEvent 本身作 key：EKEvent 的哈希随日程内容变，改过的日程再写字典会触发
+/// KEY_TYPE_OF_DICTIONARY_VIOLATES_HASHABLE_REQUIREMENTS 崩溃（v0.2.0）
 @MainActor
 final class RowFrames {
-    var frames: [EKEvent: CGRect] = [:]
+    private var frames: [ObjectIdentifier: CGRect] = [:]
+
+    func set(_ frame: CGRect, for event: EKEvent) {
+        frames[ObjectIdentifier(event)] = frame
+    }
+
+    func remove(_ event: EKEvent) {
+        frames[ObjectIdentifier(event)] = nil
+    }
 
     func event(at point: CGPoint, among events: [EKEvent]) -> EKEvent? {
-        events.first { frames[$0]?.contains(point) == true }
+        events.first { frames[ObjectIdentifier($0)]?.contains(point) == true }
     }
 }
 

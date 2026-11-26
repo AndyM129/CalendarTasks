@@ -44,7 +44,7 @@ enum ConfigFile {
     }
 
     /// 沙箱里 homeDirectoryForCurrentUser 指向容器目录，这里取用户真正的主目录
-    private static var realHome: URL {
+    static var realHome: URL {
         if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
             return URL(filePath: String(cString: dir), directoryHint: .isDirectory)
         }
