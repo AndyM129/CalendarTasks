@@ -395,16 +395,25 @@ struct CrashRecordsPage: View {
     }
 
     private func row(_ file: URL) -> some View {
-        LabeledContent {
+        // 不用 LabeledContent：它右侧的取值是可选中的文本，日期还会被识别成数据（右键出「创建日程」等系统菜单），
+        // 盖住自定义菜单。改用普通文字并关掉点击，上面盖一层透明区域接收右键，整行都弹自定义菜单
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.kind(of: file))
+                Text(file.lastPathComponent)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
             Text(CrashRecorder.modificationDate(file).formatted(date: .abbreviated, time: .standard))
-        } label: {
-            Text(Self.kind(of: file))
-            Text(file.lastPathComponent)
+                .foregroundStyle(.secondary)
+                .fixedSize()
         }
-        // Form 里 LabeledContent 的取值默认可选中，选中后右键出的是文本菜单；关掉，并让整行（含空白处）都响应右键
         .textSelection(.disabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
+        .allowsHitTesting(false)
+        .overlay { Color.clear.contentShape(.rect) }
         .contextMenu {
             Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
             Button("移到废纸篓", role: .destructive) { trash([file]) }
