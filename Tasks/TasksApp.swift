@@ -47,11 +47,16 @@ struct TasksApp: App {
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(!store.hasAccess || store.calendarForNewEvents == nil)
             }
+            CommandGroup(replacing: .appSettings) { OpenSettingsButton() }
         }
 
-        Settings {
+        // 不用 Settings 场景：它的窗口没有统一工具栏，边栏不能像主窗口那样占满高度
+        Window("设置", id: SettingsView.windowID) {
             SettingsView()
         }
+        .windowToolbarStyle(.unified)
+        .defaultSize(width: 780, height: 640)
+        .windowResizability(.contentMinSize)
     }
 }
 

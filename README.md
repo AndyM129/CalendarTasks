@@ -48,7 +48,7 @@ scripts/tasks-run.sh -- -debugBench resize # 传入 Debug 启动参数
 
 首次启动时按提示授予日历「完全访问」权限。App 开启了 App Sandbox，只申请日历权限，另外只放开 `~/.config/CalendarTasks/` 的读写（存配置文件与崩溃、卡顿记录）和 `~/Library/Logs/DiagnosticReports/` 的只读（读系统崩溃报告）。
 
-Debug 启动参数（验证用）：`-debugCrash YES` 3 秒后崩溃，`-debugHang <秒>` 3 秒后让主线程卡住，`-debugFeedback YES` 3 秒后打开问题反馈邮件，`-debugSettingsPane markers|animation|about|records` 启动后打开设置的对应页。
+Debug 启动参数（验证用）：`-debugCrash YES` 3 秒后崩溃，`-debugHang <秒>` 3 秒后让主线程卡住，`-debugFeedback YES` 3 秒后打开问题反馈邮件，`-debugSettingsPane markers|animation|about|status|records` 启动后打开设置的对应页。
 
 # 4、目录结构
 

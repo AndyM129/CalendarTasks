@@ -20,6 +20,17 @@ enum AppInfo {
         return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
     }
 
+    /// 系统名称，如 macOS Tahoe；不认识的版本只写 macOS
+    static var macOSName: String {
+        let names = [26: "Tahoe"]
+        guard let name = names[ProcessInfo.processInfo.operatingSystemVersion.majorVersion] else { return "macOS" }
+        return "macOS " + name
+    }
+
+    static var memory: String {
+        "\(ProcessInfo.processInfo.physicalMemory / 1_073_741_824) GB"
+    }
+
     /// 机型标识，如 Mac16,7
     static var model: String { sysctlString("hw.model") }
 
