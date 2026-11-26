@@ -15,7 +15,7 @@
 - 快捷键：⌘← 前一天、⌘→ 后一天、⌘T 今天、⌘J 选日期，编辑文字时不触发。
 - 窗口自适应：窗口窄于 500pt 时自动收起边栏，点边栏按钮时边栏浮在列表上方。
 - 设置（⌘,）：仿系统设置，左栏一级菜单（日程标记、动画、关于），右侧详情。「日程标记」设状态、优先级、隐藏的状态的 emoji 序列，「动画」设界面动画时长，「关于」显示版本与本机信息，并有「问题反馈」入口。
-- 崩溃与卡顿记录：用 [KSCrash](https://github.com/kstenerud/KSCrash) 记录崩溃与 1 秒以上的主线程卡顿，连同系统崩溃报告保存在 `~/.config/CalendarTasks/crashes/`。「设置 › 关于 › 问题反馈」用默认邮件 App 写信给作者，自动附上这些记录的压缩包；发现新的崩溃时也会提示，可直接点「发给作者」。
+- 崩溃与卡顿记录：用 [KSCrash](https://github.com/kstenerud/KSCrash) 记录崩溃与 1 秒以上的主线程卡顿，连同系统崩溃报告保存在 `~/.config/CalendarTasks/crashes/`。「设置 › 关于 › 问题反馈」用默认邮件 App 写信给作者，自动附上这些记录的压缩包；发现新的崩溃时也会提示，可直接点「发给作者」。邮件发出后点「已发送」，附带的记录移到 `crashes/sent/<日期>/`，之后的反馈不再附带，30 天后自动删除；记录页可右键或「删除全部记录…」移到废纸篓。
 - 本地配置文件：上述设置、日历组合与勾选的日历保存在 `~/.config/CalendarTasks/config.json`（开发版为 `config-dev.json`），卸载重装或换机后放回即可复用；换机后日历 ID 对不上时按「账户 + 日历名」重新匹配。手工修改后重启 App 生效，格式有误时 App 不读也不覆盖它。
 
 `#标签` 写在标题里时，只在显示上移到副标题行，日历数据不改。
@@ -48,7 +48,7 @@ scripts/tasks-run.sh -- -debugBench resize # 传入 Debug 启动参数
 
 首次启动时按提示授予日历「完全访问」权限。App 开启了 App Sandbox，只申请日历权限，另外只放开 `~/.config/CalendarTasks/` 的读写（存配置文件与崩溃、卡顿记录）和 `~/Library/Logs/DiagnosticReports/` 的只读（读系统崩溃报告）。
 
-Debug 启动参数（验证用）：`-debugCrash YES` 3 秒后崩溃，`-debugHang <秒>` 3 秒后让主线程卡住，`-debugFeedback YES` 3 秒后打开问题反馈邮件，`-debugSettingsPane markers|animation|about|status|records` 启动后打开设置的对应页。
+Debug 启动参数（验证用）：`-debugCrash YES` 3 秒后崩溃，`-debugHang <秒>` 3 秒后让主线程卡住，`-debugFeedback YES` 3 秒后打开问题反馈邮件，`-debugMarkSent YES` 3 秒后把未发送的记录标为已发送，`-debugSettingsPane markers|animation|about|status|records` 启动后打开设置的对应页。
 
 # 4、目录结构
 

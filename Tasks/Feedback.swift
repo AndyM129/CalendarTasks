@@ -50,17 +50,32 @@ enum AppInfo {
 enum Feedback {
     static let recipient = "andym129_hello@163.com"
 
+    /// 上一封反馈邮件附带、还没确认发出的记录。邮件 App 不告诉我们是否真的发出，由用户点「已发送」确认
+    static let pending = PendingRecords()
+
     static func compose(toasts: ToastCenter? = nil) {
         let subject = "\(AppInfo.name) 问题反馈（v\(AppInfo.version)）"
-        var items: [Any] = [body()]
+        let files = CrashRecorder.files
+        var items: [Any] = [body(recordCount: files.count)]
         let archive: URL?
         do {
-            archive = try makeArchive()
+            archive = try makeArchive(files)
         } catch {
             archive = nil
             toasts?.show("打包崩溃记录失败：" + error.localizedDescription, kind: .error)
         }
-        if let archive { items.append(archive) }
+        if let archive {
+            items.append(archive)
+            pending.files = files
+        }
+        defer {
+            // 主窗口里发起的，用提示确认；设置「关于」页里有常驻的确认行
+            if archive != nil, let toasts {
+                toasts.show(Toast("邮件发出后，点「已发送」，这些记录下次就不再附带", action: Toast.Action("已发送") {
+                    pending.confirmSent(toasts: toasts)
+                }, duration: .seconds(60)))
+            }
+        }
 
         if let service = NSSharingService(named: .composeEmail), service.canPerform(withItems: items) {
             service.recipients = [recipient]
@@ -72,13 +87,13 @@ enum Feedback {
         var components = URLComponents()
         components.scheme = "mailto"
         components.path = recipient
-        components.queryItems = [URLQueryItem(name: "subject", value: subject), URLQueryItem(name: "body", value: body())]
+        components.queryItems = [URLQueryItem(name: "subject", value: subject),
+                                 URLQueryItem(name: "body", value: body(recordCount: files.count))]
         if let url = components.url { NSWorkspace.shared.open(url) }
         if let archive { NSWorkspace.shared.activateFileViewerSelecting([archive]) }
     }
 
-    private static func body() -> String {
-        let records = CrashRecorder.files.count
+    private static func body(recordCount records: Int) -> String {
         return """
         你好，我在使用 \(AppInfo.name) 时遇到了问题：
 
@@ -100,9 +115,8 @@ enum Feedback {
         """
     }
 
-    /// 把本进程的记录打成 zip，放在 ~/.config/CalendarTasks/feedback/；没有记录时返回 nil
-    private static func makeArchive() throws -> URL? {
-        let files = CrashRecorder.files
+    /// 把这些记录打成 zip，放在 ~/.config/CalendarTasks/feedback/；没有记录时返回 nil
+    private static func makeArchive(_ files: [URL]) throws -> URL? {
         guard !files.isEmpty else { return nil }
         let fileManager = FileManager.default
         let feedbackDirectory = ConfigFile.url.deletingLastPathComponent()
@@ -128,5 +142,36 @@ enum Feedback {
         }
         if let error = coordinationError ?? copyError { throw error }
         return archive
+    }
+}
+
+/// 待确认发出的记录
+@MainActor
+@Observable
+final class PendingRecords {
+    var files: [URL] = []
+    /// 移动或删除记录后加一，记录页、关于页据此刷新
+    private(set) var revision = 0
+
+    /// 用户确认邮件已发出：把附带的记录移到已发送
+    func confirmSent(toasts: ToastCenter? = nil) {
+        do {
+            try CrashRecorder.markSent(files)
+            toasts?.show("已标为已发送，\(CrashRecorder.sentRetentionDays) 天后自动删除", kind: .success)
+        } catch {
+            toasts?.show("标记失败：" + error.localizedDescription, kind: .error)
+        }
+        files = []
+        revision += 1
+    }
+
+    func discard() {
+        files = []
+    }
+
+    func trash(_ urls: [URL]) throws {
+        defer { revision += 1 }
+        try CrashRecorder.trash(urls)
+        files.removeAll { urls.contains($0) }
     }
 }

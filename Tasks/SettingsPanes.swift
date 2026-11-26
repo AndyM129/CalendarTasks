@@ -276,6 +276,7 @@ struct AnimationPane: View {
 /// 设置 › 关于：仿系统设置「关于本机」，含问题反馈入口
 struct AboutPane: View {
     @State private var recordCount = 0
+    private let pending = Feedback.pending
 
     var body: some View {
         Form {
@@ -303,11 +304,22 @@ struct AboutPane: View {
                 LabeledContent("问题反馈") {
                     Button("写邮件…") { Feedback.compose() }
                 }
-                SettingsNavigationRow(title: "崩溃与卡顿记录", value: recordCount == 0 ? "无" : "\(recordCount) 份", route: .records)
+                if !pending.files.isEmpty {
+                    LabeledContent {
+                        HStack {
+                            Button("没发") { pending.discard() }
+                            Button("已发送") { pending.confirmSent() }
+                        }
+                    } label: {
+                        Text("刚才的邮件发出了吗？")
+                        Text("点「已发送」后，附带的 \(pending.files.count) 份记录下次不再附带")
+                    }
+                }
+                SettingsNavigationRow(title: "崩溃与卡顿记录", value: recordCount == 0 ? "无新记录" : "\(recordCount) 份未发送", route: .records)
             } header: {
                 Text("反馈")
             } footer: {
-                Text("用默认邮件 App 写信到 \(Feedback.recipient)，自动附上崩溃与卡顿记录的压缩包。")
+                Text("用默认邮件 App 写信到 \(Feedback.recipient)，自动附上未发送的崩溃与卡顿记录的压缩包。")
                     .foregroundStyle(.secondary)
             }
             Section("macOS") {
@@ -320,42 +332,88 @@ struct AboutPane: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { recordCount = CrashRecorder.files.count }
+        .onChange(of: pending.revision, initial: true) { recordCount = CrashRecorder.files.count }
     }
 }
 
 /// 关于 › 崩溃与卡顿记录
 struct CrashRecordsPage: View {
-    @State private var files: [URL] = []
+    @State private var unsent: [URL] = []
+    @State private var sent: [URL] = []
+    @State private var confirmingDeleteAll = false
+    @State private var errorMessage: String?
+    private let pending = Feedback.pending
 
     var body: some View {
         Form {
             SettingsHeaderCard(systemImage: "exclamationmark.triangle.fill", color: .orange, title: "崩溃与卡顿记录",
-                               summary: "系统崩溃报告与 1 秒以上的卡顿记录，保存在 ~/.config/CalendarTasks/crashes/，卡顿最多保留最近 50 份。「问题反馈」时会打包附在邮件里。")
+                               summary: "系统崩溃报告与 1 秒以上的卡顿记录，保存在 ~/.config/CalendarTasks/crashes/。「问题反馈」只附带未发送的记录；确认邮件已发送后，记录移到「已发送」，\(CrashRecorder.sentRetentionDays) 天后自动删除。")
             Section {
-                if files.isEmpty {
+                if unsent.isEmpty {
                     Text("暂无记录")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(files, id: \.self) { file in
-                    LabeledContent {
-                        Text(CrashRecorder.modificationDate(file).formatted(date: .abbreviated, time: .standard))
-                    } label: {
-                        Text(Self.kind(of: file))
-                        Text(file.lastPathComponent)
-                    }
+                ForEach(unsent, id: \.self, content: row)
+            } header: {
+                Text("未发送")
+            }
+            if !sent.isEmpty {
+                Section {
+                    ForEach(sent, id: \.self, content: row)
+                } header: {
+                    Text("已发送")
                 }
+            }
+            Section {
             } footer: {
-                SettingsFooterButtons {
-                    Button("在访达中显示") {
-                        try? FileManager.default.createDirectory(at: CrashRecorder.directory, withIntermediateDirectories: true)
-                        NSWorkspace.shared.open(CrashRecorder.directory)
+                VStack(alignment: .trailing, spacing: 8) {
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                    }
+                    SettingsFooterButtons {
+                        Button("在访达中显示") {
+                            try? FileManager.default.createDirectory(at: CrashRecorder.directory, withIntermediateDirectories: true)
+                            NSWorkspace.shared.open(CrashRecorder.directory)
+                        }
+                        Button("删除全部记录…") { confirmingDeleteAll = true }
+                            .disabled(unsent.isEmpty && sent.isEmpty)
                     }
                 }
             }
         }
         .formStyle(.grouped)
-        .onAppear { files = CrashRecorder.files }
+        .confirmationDialog("删除全部 \(unsent.count + sent.count) 份记录？", isPresented: $confirmingDeleteAll) {
+            Button("移到废纸篓", role: .destructive) { trash(unsent + sent) }
+        } message: {
+            Text("记录会移到废纸篓，可从废纸篓恢复。")
+        }
+        .onChange(of: pending.revision, initial: true) {
+            unsent = CrashRecorder.files
+            sent = CrashRecorder.sentFiles
+        }
+    }
+
+    private func row(_ file: URL) -> some View {
+        LabeledContent {
+            Text(CrashRecorder.modificationDate(file).formatted(date: .abbreviated, time: .standard))
+        } label: {
+            Text(Self.kind(of: file))
+            Text(file.lastPathComponent)
+        }
+        .contextMenu {
+            Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+            Button("移到废纸篓", role: .destructive) { trash([file]) }
+        }
+    }
+
+    private func trash(_ urls: [URL]) {
+        do {
+            try pending.trash(urls)
+            errorMessage = nil
+        } catch {
+            errorMessage = "删除失败：" + error.localizedDescription
+        }
     }
 
     private static func kind(of file: URL) -> String {

@@ -22,6 +22,13 @@ struct TasksApp: App {
         if UserDefaults.standard.bool(forKey: "debugFeedback") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { Feedback.compose() }
         }
+        // 验证用：启动参数 -debugMarkSent YES，3 秒后把未发送的记录当作已发送（不打开邮件）
+        if UserDefaults.standard.bool(forKey: "debugMarkSent") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                Feedback.pending.files = CrashRecorder.files
+                Feedback.pending.confirmSent()
+            }
+        }
         #endif
     }
 
