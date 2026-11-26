@@ -401,6 +401,10 @@ struct CrashRecordsPage: View {
             Text(Self.kind(of: file))
             Text(file.lastPathComponent)
         }
+        // Form 里 LabeledContent 的取值默认可选中，选中后右键出的是文本菜单；关掉，并让整行（含空白处）都响应右键
+        .textSelection(.disabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
         .contextMenu {
             Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
             Button("移到废纸篓", role: .destructive) { trash([file]) }
