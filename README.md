@@ -20,13 +20,32 @@
 
 `#标签` 写在标题里时，只在显示上移到副标题行，日历数据不改。
 
-# 2、环境要求
+# 2、安装
+
+推荐用安装脚本，从 GitHub Release 下载 dmg、校验后装到 `/Applications` 并启动（需已登录 `gh`）：
+
+```sh
+scripts/install-release.sh            # 最新正式版
+scripts/install-release.sh v0.3.0     # 指定版本
+```
+
+App 没有经过 Apple 公证。用浏览器下载 dmg 安装时，首次打开会提示「Apple 无法验证 "CalendarTasks.app" 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件」。点「完成」后在终端执行一次下面的命令，再打开即可（命令行下载不会触发这个提示，安装脚本不用这一步）：
+
+```sh
+xattr -dr com.apple.quarantine /Applications/CalendarTasks.app
+```
+
+也可以到「系统设置 › 隐私与安全性」底部点「仍要打开」。
+
+正式包用固定的个人证书签名，升级到新版后日历授权保留，不用重新授权。从 v0.3.0 及更早的版本（ad-hoc 签名）升级上来时需要再授权一次。
+
+# 3、环境要求
 
 - macOS 26 Tahoe 及以上
 - Xcode 26（Swift 6）
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
 
-# 3、编译与运行
+# 4、编译与运行
 
 工程文件由 `project.yml` 生成，`Tasks.xcodeproj/` 不入库：
 
@@ -50,7 +69,7 @@ scripts/tasks-run.sh -- -debugBench resize # 传入 Debug 启动参数
 
 Debug 启动参数（验证用）：`-debugCrash YES` 3 秒后崩溃，`-debugHang <秒>` 3 秒后让主线程卡住，`-debugFeedback YES` 3 秒后打开问题反馈邮件，`-debugMarkSent YES` 3 秒后把未发送的记录标为已发送，`-debugSettingsPane markers|animation|about|status|records` 启动后打开设置的对应页。
 
-# 4、目录结构
+# 5、目录结构
 
 - `Tasks/CalendarStore.swift`：EventKit 封装与全局状态；`CalendarStore+ListOrder.swift`：排序与隐藏规则。
 - `Tasks/ContentView.swift`：分栏、浮动边栏、日期快捷键；`SidebarView.swift`：边栏；`DayListView.swift`：当日列表。
@@ -62,4 +81,4 @@ Debug 启动参数（验证用）：`-debugCrash YES` 3 秒后崩溃，`-debugHa
 - `Tasks/CrashRecorder.swift`、`Feedback.swift`：崩溃与卡顿记录、问题反馈邮件。
 - `Tasks/DebugBench.swift`：Debug 版的性能与动画测量工具。
 - `References/`：设计参考截图。
-- `scripts/tasks-run.sh`：编译运行脚本。
+- `scripts/tasks-run.sh`：编译运行脚本；`package-dmg.sh`：打包 dmg（本地与 CI 共用）；`install-release.sh`：下载 Release 并安装。

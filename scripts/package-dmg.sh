@@ -1,5 +1,5 @@
 #!/bin/zsh
-# 编译正式版（通用二进制）、注入版本元信息、ad-hoc 重签并生成 .dmg。本地与 CI 共用。
+# 编译正式版（通用二进制）、注入版本元信息、重签并生成 .dmg。本地与 CI 共用。
 # 做法说明见 ifsd skill references/macos/release.md。
 # 用法：
 #   CHANNEL=stable MARKETING_VERSION=1.0.0 BUILD_NUMBER=1 ./scripts/package-dmg.sh
@@ -9,6 +9,8 @@
 #   MARKETING_VERSION 版本号（为空则用 project.yml 默认值）
 #   BUILD_NUMBER      构建号（默认 1）
 #   LABEL             产物标签（可选；CI 传入以保证与 Release tag 一致）
+#   SIGN_IDENTITY     签名证书名或 SHA-1（默认 project.yml 里的个人证书；"-" 为 ad-hoc）
+#                     ad-hoc 签名每个版本都不同，系统会把新版当成新 App，日历授权随之失效
 # 产物：.build/dist/<DMG 前缀>-<标签>.dmg 及其 .sha256
 #   正式版标签 v<版本>，测试版标签 v<版本>-beta-<短哈希>-<时间戳>
 set -euo pipefail
@@ -28,6 +30,7 @@ ROOT="$PWD"
 CHANNEL="${CHANNEL:-stable}"
 MARKETING_VERSION="${MARKETING_VERSION:-}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
+SIGN_IDENTITY="${SIGN_IDENTITY:-Apple Development: andy_m129@163.com (VRLXD5P3P7)}"
 DERIVED_DATA="$ROOT/.build/DerivedData"
 DIST="$ROOT/.build/dist"
 
@@ -45,16 +48,15 @@ echo "==> 渠道 $CHANNEL / 版本 ${MARKETING_VERSION:-<project.yml 默认>} / 
 
 xcodegen generate
 
-# ad-hoc 签名；不加 CODE_SIGNING_ALLOWED=NO，让编译期为 App 签名并带上 entitlements
+# 编译期即用同一证书签名并带上 entitlements；ad-hoc 时不要求证书与 Team
 BUILD_SETTINGS=(
   ARCHS="arm64 x86_64"
   ONLY_ACTIVE_ARCH=NO
-  CODE_SIGN_IDENTITY="-"
+  CODE_SIGN_IDENTITY="$SIGN_IDENTITY"
   CODE_SIGN_STYLE=Manual
-  CODE_SIGNING_REQUIRED=NO
-  DEVELOPMENT_TEAM=""
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 )
+[[ "$SIGN_IDENTITY" == "-" ]] && BUILD_SETTINGS+=(CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM="")
 [[ -n "$MARKETING_VERSION" ]] && BUILD_SETTINGS+=(MARKETING_VERSION="$MARKETING_VERSION")
 
 rm -rf "$DERIVED_DATA/Build/Products/Release"
@@ -70,9 +72,11 @@ plutil -replace "${INFO_PREFIX}GitCommit" -string "$GIT_SHA" "$PLIST"
 plutil -replace "${INFO_PREFIX}BuildTimestamp" -string "$TIMESTAMP" "$PLIST"
 
 # 改了 Info.plist 要重签：带上 App entitlements，保留 app-sandbox 与日历权限；禁止 --deep
-codesign --force --sign - --timestamp=none --options runtime \
+codesign --force --sign "$SIGN_IDENTITY" --timestamp=none --options runtime \
   --entitlements "$ROOT/$APP_ENTITLEMENTS" "$APP"
 codesign --verify --strict "$APP"
+# 系统按指定要求（designated requirement）认定是不是同一个 App；用证书签名时应含证书名而不是 cdhash
+codesign -d -r - "$APP"
 
 SHORT_VER="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")"
 if [[ -z "${LABEL:-}" ]]; then
