@@ -26,7 +26,7 @@
 
 ```sh
 scripts/install-release.sh            # 最新正式版
-scripts/install-release.sh v0.3.0     # 指定版本
+scripts/install-release.sh v0.3.1     # 指定版本
 ```
 
 App 没有经过 Apple 公证。用浏览器下载 dmg 安装时，首次打开会提示「Apple 无法验证 "CalendarTasks.app" 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件」。点「完成」后在终端执行一次下面的命令，再打开即可（命令行下载不会触发这个提示，安装脚本不用这一步）：
