@@ -346,7 +346,7 @@ struct AboutPane: View {
     @ViewBuilder private var updateSection: some View {
         Section {
             LabeledContent("检查更新") {
-                Button(isChecking ? "检查中…" : "检查更新…") { check() }
+                Button(isChecking ? "检查中…" : "检查更新") { check() }
                     .disabled(isChecking)
             }
             if let available = available {
