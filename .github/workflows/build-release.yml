@@ -94,12 +94,23 @@ jobs:
           LABEL: ${{ steps.meta.outputs.tag }}
         run: ./scripts/package-dmg.sh
 
+      # Release 正文取 CHANGELOG.md 里该版本一节，App 内「检查更新」显示同样内容
+      - name: Release notes
+        run: |
+          mkdir -p .build
+          ./scripts/release-notes.sh "${{ steps.meta.outputs.version }}" > .build/release-notes.md
+          echo "---- release notes ----"; cat .build/release-notes.md
+          if [ ! -s .build/release-notes.md ]; then
+            echo "::warning::CHANGELOG.md 里没有 v${{ steps.meta.outputs.version }} 一节，Release 正文将只有 GitHub 自动生成的对比链接"
+          fi
+
       - name: Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.tag }}
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          body_path: .build/release-notes.md
           generate_release_notes: true
           files: |
             .build/dist/*-${{ steps.meta.outputs.tag }}.dmg
