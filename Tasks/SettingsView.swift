@@ -25,7 +25,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: Binding(get: { location }, set: { if let location = $0 { go(to: location) } })) {
+            List(selection: Binding(get: { location.pane }, set: { if let pane = $0 { go(to: SettingsLocation(pane: pane)) } })) {
                 Section {
                     ForEach([SettingsPane.markers, .animation]) { SettingsSidebarRow(pane: $0) }
                 }
@@ -40,6 +40,11 @@ struct SettingsView: View {
             NavigationStack {
                 detail
                     .navigationTitle(location.title)
+                    .onDisappear {
+                        if location.route != nil {
+                            index = history.lastIndex(where: { $0.pane == location.pane && $0.route == nil }) ?? index
+                        }
+                    }
                     .environment(\.settingsNavigate, SettingsNavigateAction { route in
                         go(to: SettingsLocation(pane: location.pane, route: route))
                     })
