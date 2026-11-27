@@ -1,10 +1,13 @@
 #!/bin/zsh
 # 编译并（重新）启动「日历任务」，供 Agent 运行、验证、调试时调用。
-# 用法：scripts/tasks-run.sh [--icon] [--size <宽>x<高>] [--shot <截图路径>] [-- <传给 App 的启动参数>]
+# 用法：scripts/tasks-run.sh [--icon] [--size <宽>x<高>] [--shot <截图路径> [--window <标题子串>]] [-- <传给 App 的启动参数>]
 #   --icon  换过图标后刷新系统图标缓存（更新修改时间 + lsregister）
 #   --size  以指定窗口尺寸（pt）、边栏展开启动，只影响本次，用于检查窗口自适应
-#   --shot  启动 8 秒后截全屏到指定路径（带 --size 冷启动时窗口出现较慢）
+#   --shot  启动 8 秒后只截开发版自己的窗口到指定路径（带 --size 冷启动时窗口出现较慢）。
+#           不截全屏：全屏会带进用户正在用的其他 App 的内容。默认截面积最大的普通窗口
+#   --window 配合 --shot，改截标题包含该子串的窗口，如 --window 日程标记（设置窗口）
 #   --      之后的参数原样传给 App，如 -- -debugFloatingSidebar YES
+# 截窗口用 fsd2 skill 的 scripts/macos-window-shot.swift，路径可用环境变量 WINDOW_SHOT 覆盖
 set -euo pipefail
 
 cd "${0:A:h}/.."
@@ -17,18 +20,26 @@ FRAME_KEY='NSWindow Frame SwiftUI.ModifiedContent<SwiftUI.ModifiedContent<Tasks.
 
 refresh_icon=false
 shot=""
+window=""
 size=""
+WINDOW_SHOT="${WINDOW_SHOT:-$HOME/.agents/skills/xinxin-fsd-v2/scripts/macos-window-shot.swift}"
 app_args=()
 while (( $# )); do
     case "$1" in
         --icon) refresh_icon=true ;;
         --shot) shot="$2"; shift ;;
+        --window) window="$2"; shift ;;
         --size) size="$2"; shift ;;
         --) shift; app_args=("$@"); break ;;
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
     shift
 done
+
+if [[ -n "$shot" && ! -f "$WINDOW_SHOT" ]]; then
+    echo "找不到截窗口脚本：$WINDOW_SHOT（装好 fsd2 skill，或用 WINDOW_SHOT 指定路径）" >&2
+    exit 2
+fi
 
 xcodegen generate --quiet
 log=build/last-build.log
@@ -66,6 +77,9 @@ fi
 
 if [[ -n "$shot" ]]; then
     sleep 8
-    screencapture -x "$shot"
-    echo "截图：$shot"
+    # 按进程号截：别的分支根也可能在跑同名的开发版
+    pid=$(pgrep -f "$PWD/$APP/Contents/MacOS/" | head -1)
+    [[ -n "$pid" ]] || { echo "开发版没有在运行，无法截图" >&2; exit 1; }
+    # TMPDIR 已指向工程内的 build/tmp，swift 解释执行要写临时文件
+    swift "$WINDOW_SHOT" "$pid" "$shot" ${window:+"$window"}
 fi
