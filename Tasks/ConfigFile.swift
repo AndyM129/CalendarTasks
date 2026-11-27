@@ -12,6 +12,12 @@ enum ConfigFile {
         /// 勾选的日历；没有这一项时勾选全部
         var selectedCalendars: [CalendarRef]?
         var calendarGroups: [Group]
+        /// 是否自动检查更新；缺省（旧配置文件没有这一项）视为开启
+        var autoUpdate: Bool?
+        /// 上次自动检查更新的时间
+        var updateCheckAt: Date?
+        /// 自动检查发现、还没装的版本号
+        var pendingUpdateVersion: String?
     }
 
     /// 日历引用。日历 ID 由本机生成，换机后同一个日历的 ID 会变，ID 对不上时按「账户 + 日历名」重新匹配
@@ -76,6 +82,19 @@ enum ConfigFile {
         defaults.set(content.priorityEmojis, forKey: EmojiMarkers.priorityKey)
         defaults.set(content.hiddenStatuses, forKey: CalendarStore.hiddenStatusKey)
         defaults.set(content.animationDuration, forKey: Animation.durationKey)
+        defaults.set(content.autoUpdate ?? true, forKey: UpdateSettings.autoUpdateKey)
+        defaults.set(content.updateCheckAt, forKey: UpdateSettings.checkAtKey)
+        defaults.set(content.pendingUpdateVersion, forKey: UpdateSettings.pendingVersionKey)
+    }
+
+    /// 更新相关的当前设置，写回配置文件时用
+    static func currentUpdateState() -> (autoUpdate: Bool, checkAt: Date?, pending: String?) {
+        let defaults = UserDefaults.standard
+        return (
+            defaults.object(forKey: UpdateSettings.autoUpdateKey) as? Bool ?? true,
+            defaults.object(forKey: UpdateSettings.checkAtKey) as? Date,
+            defaults.string(forKey: UpdateSettings.pendingVersionKey)
+        )
     }
 
     static func currentPreferences() -> (status: String, priority: String, hidden: String, duration: Double) {

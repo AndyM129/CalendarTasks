@@ -466,6 +466,7 @@ final class CalendarStore {
     private func saveConfig() {
         guard configWritable else { return }
         let prefs = ConfigFile.currentPreferences()
+        let update = ConfigFile.currentUpdateState()
         let selected = UserDefaults.standard.array(forKey: Self.selectedIDsKey) as? [String]
         let content = ConfigFile.Content(
             statusEmojis: prefs.status,
@@ -475,7 +476,10 @@ final class CalendarStore {
             selectedCalendars: selected.map { refs(for: Set($0)) },
             calendarGroups: groups.map {
                 ConfigFile.Group(id: $0.id, name: $0.name, tint: $0.tint, calendars: refs(for: $0.calendarIDs))
-            }
+            },
+            autoUpdate: update.autoUpdate,
+            updateCheckAt: update.checkAt,
+            pendingUpdateVersion: update.pending
         )
         guard content != savedConfig else { return }
         do {

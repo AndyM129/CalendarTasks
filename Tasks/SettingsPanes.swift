@@ -273,9 +273,14 @@ struct AnimationPane: View {
 
 // MARK: - 关于
 
-/// 设置 › 关于：仿系统设置「关于本机」，含问题反馈入口
+/// 设置 › 关于：仿系统设置「关于本机」，含问题反馈与更新入口
 struct AboutPane: View {
     @State private var recordCount = 0
+    @State private var autoUpdate = UpdateSettings.autoUpdate
+    /// 检查更新后的状态文案，放在「更新」区块底部
+    @State private var updateStatus = ""
+    @State private var isChecking = false
+    @State private var available: UpdateInfo?
     private let pending = Feedback.pending
 
     var body: some View {
@@ -299,6 +304,7 @@ struct AboutPane: View {
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 12)
             }
+            updateSection
             // 反馈放在版本之后，不用滚动就能看到
             Section {
                 LabeledContent("问题反馈") {
@@ -333,6 +339,67 @@ struct AboutPane: View {
         }
         .formStyle(.grouped)
         .onChange(of: pending.revision, initial: true) { recordCount = CrashRecorder.files.count }
+        .onAppear(perform: refreshPendingVersion)
+    }
+
+    /// 「更新」区块：手动检查 + 自动更新开关，状态与操作放在同一块里
+    @ViewBuilder private var updateSection: some View {
+        Section {
+            LabeledContent("检查更新") {
+                Button(isChecking ? "检查中…" : "检查更新…") { check() }
+                    .disabled(isChecking)
+            }
+            if let available = available {
+                LabeledContent("新版本 v\(available.version)") {
+                    Button("下载并安装…") { UpdateWindowController.show(available) }
+                }
+            }
+            Toggle("自动更新", isOn: $autoUpdate)
+                .onChange(of: autoUpdate) { UpdateSettings.autoUpdate = autoUpdate }
+        } header: {
+            Text("更新")
+        } footer: {
+            Text(updateFooter)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var updateFooter: String {
+        if !updateStatus.isEmpty { return updateStatus }
+        if !UpdateSettings.autoUpdate {
+            return "自动更新已关闭，只在点「检查更新…」时联网查版本。"
+        }
+        return "开启后每 6 小时在后台查一次新版本，发现新版只在这里提示，不打扰你。"
+    }
+
+    /// 打开设置页时把后台自动检查发现的版本显示出来
+    private func refreshPendingVersion() {
+        guard available == nil, let version = UserDefaults.standard.string(forKey: UpdateSettings.pendingVersionKey),
+              UpdateChecker.isVersion(version, newerThan: AppInfo.version)
+        else { return }
+
+        available = UpdateInfo(version: version, notes: "", downloadURL: nil, checksumURL: nil,
+                               pageURL: AppInfo.repositoryURL)
+    }
+
+    private func check() {
+        isChecking = true
+        updateStatus = ""
+
+        UpdateChecker.shared.check { result in
+            isChecking = false
+            switch result {
+            case .upToDate:
+                available = nil
+                UserDefaults.standard.removeObject(forKey: UpdateSettings.pendingVersionKey)
+                updateStatus = "已是最新版本 v\(AppInfo.version)。"
+            case let .updateAvailable(update):
+                available = update
+                updateStatus = "发现新版本 v\(update.version)，可下载安装。"
+            case let .failed(message):
+                updateStatus = message
+            }
+        }
     }
 }
 

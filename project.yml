@@ -36,6 +36,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.personal-information.calendars: true
+        # 检查更新要访问 GitHub API
+        com.apple.security.network.client: true
         # 用户设置存到 ~/.config/CalendarTasks/，卸载重装、换机后可复用
         com.apple.security.temporary-exception.files.home-relative-path.read-write:
           - /.config/CalendarTasks/

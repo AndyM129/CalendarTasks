@@ -15,6 +15,20 @@ enum AppInfo {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
     }
 
+    /// 构建渠道：正式包由 CI 注入 release，本地编译的 Debug 版为 dev
+    static var channel: String {
+        Bundle.main.object(forInfoDictionaryKey: "AppBuildChannel") as? String ?? "dev"
+    }
+
+    static var repositoryURL: URL {
+        URL(string: "https://github.com/AndyM129/CalendarTasks")!
+    }
+
+    /// 最新正式版 Release 的 API 地址
+    static var latestReleaseAPI: URL {
+        URL(string: "https://api.github.com/repos/AndyM129/CalendarTasks/releases/latest")!
+    }
+
     static var macOSVersion: String {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"

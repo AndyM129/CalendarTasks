@@ -7,6 +7,8 @@ struct TasksApp: App {
     init() {
         // 尽早开始监控崩溃与卡顿
         CrashRecorder.install()
+        // 自动检查更新：开关关掉或本地开发构建时内部直接跳过
+        UpdateChecker.shared.startAutomaticChecks()
         #if DEBUG
         DebugBench.runIfRequested()
         // 验证用：启动参数 -debugCrash YES，3 秒后故意崩溃，下次启动看 CrashRecorder 是否记下
