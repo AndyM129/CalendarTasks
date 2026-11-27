@@ -351,7 +351,11 @@ struct AboutPane: View {
             }
             if let available = available {
                 LabeledContent("新版本 v\(available.version)") {
-                    Button("下载并安装…") { UpdateWindowController.show(available) }
+                    // 后台检查只记了版本号，没有说明与安装包地址时先重新检查一次拿全信息
+                    Button("下载并安装…") {
+                        if available.downloadURL == nil { check() } else { UpdateWindowController.show(available) }
+                    }
+                    .disabled(isChecking)
                 }
             }
             Toggle("自动更新", isOn: $autoUpdate)
@@ -367,7 +371,7 @@ struct AboutPane: View {
     private var updateFooter: String {
         if !updateStatus.isEmpty { return updateStatus }
         if !UpdateSettings.autoUpdate {
-            return "自动更新已关闭，只在点「检查更新…」时联网查版本。"
+            return "自动更新已关闭，只在点「检查更新」时联网查版本。"
         }
         return "开启后每 6 小时在后台查一次新版本，发现新版只在这里提示，不打扰你。"
     }
@@ -395,7 +399,10 @@ struct AboutPane: View {
                 updateStatus = "已是最新版本 v\(AppInfo.version)。"
             case let .updateAvailable(update):
                 available = update
+                UserDefaults.standard.set(update.version, forKey: UpdateSettings.pendingVersionKey)
                 updateStatus = "发现新版本 v\(update.version)，可下载安装。"
+                // 手动检查发现新版直接弹出更新窗口；后台自动检查仍只记版本、不弹窗
+                UpdateWindowController.show(update)
             case let .failed(message):
                 updateStatus = message
             }
