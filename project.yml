@@ -48,8 +48,8 @@ targets:
       base:
         # 模块名固定为 Tasks（产物名按配置区分，含连字符不能作模块名）
         PRODUCT_MODULE_NAME: Tasks
-        MARKETING_VERSION: 0.3.1
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.3.2
+        CURRENT_PROJECT_VERSION: 2
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: 6.0
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
