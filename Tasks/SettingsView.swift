@@ -25,7 +25,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: Binding(get: { location.pane }, set: { if let pane = $0 { go(to: SettingsLocation(pane: pane)) } })) {
+            List(selection: Binding(get: { location }, set: { if let location = $0 { go(to: location) } })) {
                 Section {
                     ForEach([SettingsPane.markers, .animation]) { SettingsSidebarRow(pane: $0) }
                 }
@@ -53,7 +53,7 @@ struct SettingsView: View {
                     }
             }
         }
-        .frame(minWidth: 720, minHeight: 520)
+        .frame(minWidth: 720, idealWidth: 760, minHeight: 520, idealHeight: 540)
     }
 
     @ViewBuilder private var detail: some View {
